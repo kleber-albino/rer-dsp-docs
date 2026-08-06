@@ -46,24 +46,31 @@ Copyright &copy; 2026 Rural Environmental Registry — GPL-3.0
 # Read more: https://zensical.org/docs/setup/navigation/
 nav = [
   { "Início" = "index.md" },
-  { "Começando" = "getting-started.md" },
+  { "O que é o DSP" = "o-que-e-o-dsp.md" },
+  { "Módulos do DSP" = "modulos.md" },
+  { "Começando rápido (demo local)" = "getting-started.md" },
+  { "Guias de instalação" = [
+      { "Instalação completa" = "guides/full-installation.md" },
+      { "Integrar apenas um módulo" = "guides/single-module-integration.md" },
+    ]
+  },
   { "Arquitetura" = [
       { "Visão geral" = "architecture/overview.md" },
+      { "Fluxo de dados" = "architecture/data-flow.md" },
+      { "Dependências entre módulos" = "architecture/dependencies.md" },
       { "Bancos de dados" = "architecture/databases.md" },
     ]
   },
-  { "Backend" = [
-      { "Configuração da instalação" = "backend/installation-config.md" },
-    ]
-  },
-  { "Frontend" = [
-      { "Componente de mapa" = "frontend/map-component.md" },
-    ]
-  },
-  { "Migração" = [
-      { "Visão geral" = "migration/overview.md" },
-      { "Job data-migration" = "migration/rer-dsp-job-data-migration.md" },
-      { "Validação" = "migration/validation.md" },
+  { "Referência dos módulos" = [
+      { "rer-dsp-core" = "modules/core.md" },
+      { "rer-dsp-backend" = "modules/backend.md" },
+      { "rer-dsp-frontend" = "modules/frontend.md" },
+      { "rer-dsp-job-data-migration" = [
+          { "Visão geral" = "modules/job-data-migration/overview.md" },
+          { "Configuração e execução" = "modules/job-data-migration/configuration.md" },
+          { "Validação pós-migração" = "modules/job-data-migration/validation.md" },
+        ]
+      },
     ]
   },
 ]

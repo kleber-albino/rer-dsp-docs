@@ -85,11 +85,15 @@ Cada execução do job faz **1 source → 2 targets**:
 2. Grava em `dsp-db`: atributos + `boundary_box` + `centroid_coordinates`.
 3. Grava em `exhibition-db`: atributos + `geometry` completa.
 
-| Comportamento | Detalhe |
-|---------------|---------|
-| Falha | **Fail-fast** — se um destino falhar, a execução falha |
-| Reexecução | **Idempotente** — UPSERT `ON CONFLICT` em ambos os destinos |
-| Divergência temporária | **Aceitável** — entre falha e reexecução, um banco pode estar à frente do outro |
+```mermaid
+flowchart LR
+  src[(Fonte JDBC<br/>do adotante)] -->|1. Lê atributos + geometria| job[dsp-batch]
+
+  subgraph write ["2. Dual-write — UPSERT ON CONFLICT"]
+    job -->|"atributos + boundary_box<br/>+ centroid_coordinates"| dspdb[(dsp-db)]
+    job -->|"atributos + geometry<br/>completa"| exdb[(exhibition-db)]
+  end
+```
 
 ---
 
@@ -104,7 +108,7 @@ O SRID **não** é fixado em código nem no DDL (sem `geometry(MultiPolygon, 467
 | Escrita | O writer aplica o SRID informado ao persistir (`ST_SetSRID`, `ST_GeomFromGeoJSON`, etc.) |
 | Validação | Conferir `ST_SRID(...)` contra o `srid` do YAML correspondente |
 
-Instalações distintas podem usar SRIDs diferentes por layer, desde que o YAML e a origem estejam alinhados.
+Instalações distintas podem usar SRIDs diferentes por "layer", desde que o YAML e a origem estejam alinhados.
 
 ---
 
@@ -117,4 +121,4 @@ Instalações distintas podem usar SRIDs diferentes por layer, desde que o YAML 
 | exhibition-db (geo-target) | `spring.datasource.geo-target` | `dsp-geoserver-exhibition-db` |
 | batch | `spring.datasource.batch` | `dsp-job-migration-db` |
 
-Detalhe operacional: [Job data-migration](../migration/rer-dsp-job-data-migration.md) · validação: [Validação](../migration/validation.md) · Compose local: [rer-dsp-core/docs/databases.md](https://github.com/Rural-Environmental-Registry/rer-dsp-core/blob/main/docs/databases.md).
+Detalhe operacional: [Job data-migration — Configuração e execução](../modules/job-data-migration/configuration.md) · validação: [Validação pós-migração](../modules/job-data-migration/validation.md) · orquestração dos bancos: [rer-dsp-core](../modules/core.md).

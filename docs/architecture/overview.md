@@ -9,10 +9,9 @@ Visão da arquitetura multi-camada e multi-repositório da **Data Sharing Platfo
 - [Princípios](#principios)
 - [Visão de contexto](#visao-de-contexto)
 - [Camadas e responsabilidades](#camadas-e-responsabilidades)
+- [O core como camada de orquestração](#o-core-como-camada-de-orquestracao)
 - [Fluxo de dados](#fluxo-de-dados)
 - [Bancos de dados](#bancos-de-dados)
-- [Jobs](#jobs)
-- [Relação com o onboarding](#relacao-com-o-onboarding)
 
 ---
 
@@ -20,11 +19,12 @@ Visão da arquitetura multi-camada e multi-repositório da **Data Sharing Platfo
 
 O DSP não é um único monólito. Ele combina:
 
-- **Aplicações** (frontend, backend, core)
-- **Jobs** (migração de dados, geração de arquivos geo)
-- **Infraestrutura de dados** (PostgreSQL/PostGIS, File Bucket, GeoServer)
+- **Aplicações** (frontend, backend)
+- **Orquestração e configuração** (core)
+- **Jobs** (migração/sincronização de dados)
+- **Infraestrutura de dados** (PostgreSQL/PostGIS, GeoServer)
 
-O objetivo é **compartilhar dados ambientais rurais** de forma confiável, com base geoespacial sincronizada a partir de fontes legadas ou de outros módulos do RER.
+O objetivo é **compartilhar dados geoespaciais** de forma confiável, com base sincronizada a partir da fonte JDBC do adotante — no ecossistema RER, esses dados são tipicamente ambientais rurais, mas a arquitetura não depende desse domínio específico (veja [O que é o DSP?](../o-que-e-o-dsp.md)).
 
 ---
 
@@ -32,87 +32,31 @@ O objetivo é **compartilhar dados ambientais rurais** de forma confiável, com 
 
 ```mermaid
 flowchart LR
-  legGw["Gateway"]
-  legApp["Aplicações"]
-  legGeo["Geoespacial"]
-  legDb["Persistência"]
-  legJob["Jobs"]
-  legCore["Core"]
+  core["rer-dsp-core<br/>orquestração Docker Compose"]
+  job["rer-dsp-job-data-migration<br/>ETL Spring Batch"]
+  be["rer-dsp-backend<br/>API REST"]
+  fe["rer-dsp-frontend<br/>SPA Vue 3"]
+  src[(Fonte JDBC<br/>do adotante)]
+  dspdb[(dsp-db)]
+  exdb[(exhibition-db)]
+  gs[GeoServer]
 
-  legGw ~~~ legApp ~~~ legGeo ~~~ legDb ~~~ legJob ~~~ legCore
+  core -->|"sobe/configura"| dspdb
+  core -->|"sobe/configura"| exdb
+  core -->|"sobe"| gs
+  core -->|"orquestra build/config"| job
+  core -->|"orquestra build/config"| be
+  core -->|"orquestra build/config"| fe
 
-  classDef gw fill:#1e3a5f22,color:#1e3a5f,stroke:#1e3a5f,stroke-width:2px
-  classDef app fill:#0f766e22,color:#115e59,stroke:#0f766e,stroke-width:2px
-  classDef geoCls fill:#16653422,color:#14532d,stroke:#166534,stroke-width:2px
-  classDef db fill:#b4530922,color:#92400e,stroke:#b45309,stroke-width:2px
-  classDef job fill:#7c2d1222,color:#7c2d12,stroke:#9a3412,stroke-width:2px
+  src --> job
+  job -->|"negócio + bbox/centroid"| dspdb
+  job -->|"geometria completa"| exdb
+  exdb --> gs
+  dspdb --> be
+  be -->|REST| fe
+  gs -->|WMS| fe
+
   classDef coreCls fill:#312e8122,color:#312e81,stroke:#4338ca,stroke-width:2px
-
-  class legGw gw
-  class legApp app
-  class legGeo geoCls
-  class legDb db
-  class legJob job
-  class legCore coreCls
-```
-
-```mermaid
-flowchart LR
-  srcDb[("SEU DATABASE<br/>Banco da sua organização que você quer migrar os dados.<br/>Fonte a migrar para o DSP.")]
-  jobMig["JOB-DB-MIGRATION<br/>ETL Spring Batch.<br/>Dual-write: origem → dsp-db + exhibition-db."]
-  core["CORE<br/>SETUP · CONFIG · START.<br/>Prepara bancos e dispara migração."]
-  jobGeo["JOB-GEO-FILE<br/>Gera arquivos geoespaciais.<br/>Lê DSP DB e grava no bucket."]
-
-  dspDb[("DSP DB<br/>Operacional: negócio + bbox/centroid.<br/>Sem geometry completa.")]
-  gsDb[("EXHIBITION DB<br/>Geometria completa dsp.*<br/>Só GeoServer Exhibition.")]
-  bucket[("FILE-BUCKET<br/>Armazena arquivos e artefatos.<br/>Exports, pacotes e anexos.")]
-
-  be["DSP BACKEND<br/>API REST e regras de negócio.<br/>Autenticação e orquestração."]
-  fe["DSP FRONTEND<br/>Interface web da plataforma.<br/>Consulta, mapas e compartilhamento."]
-
-  gsEx["GEOSERVER-EXIBITION<br/>Publica layers para visualização.<br/>Serviços WMS/WFS na tela."]
-  gsDl["GEOSERVER-DOWNLOAD<br/>Entrega dados geo para download.<br/>Exportação de camadas."]
-
-  nginx["NGINX<br/>Ponto de entrada HTTP.<br/>Reverse proxy para apps e GeoServers."]
-
-  srcDb --- jobMig
-  jobMig --- dspDb
-  jobMig --- gsDb
-  core --- jobMig
-  core --- dspDb
-  core --- gsDb
-  dspDb --- jobGeo
-  jobGeo --- bucket
-
-  be --- dspDb
-  gsEx --- gsDb
-  gsDl --- gsDb
-  gsEx --- be
-  gsEx --- gsDl
-
-  fe --- be
-  fe --- bucket
-  fe --- gsEx
-  fe --- gsDl
-
-  nginx --- fe
-  nginx --- be
-  nginx --- gsEx
-  nginx --- gsDl
-  nginx --- bucket
-
-  classDef gw fill:#1e3a5f22,color:#1e3a5f,stroke:#1e3a5f,stroke-width:2px
-  classDef app fill:#0f766e22,color:#115e59,stroke:#0f766e,stroke-width:2px
-  classDef geoCls fill:#16653422,color:#14532d,stroke:#166534,stroke-width:2px
-  classDef db fill:#b4530922,color:#92400e,stroke:#b45309,stroke-width:2px
-  classDef job fill:#7c2d1222,color:#7c2d12,stroke:#9a3412,stroke-width:2px
-  classDef coreCls fill:#312e8122,color:#312e81,stroke:#4338ca,stroke-width:2px
-
-  class nginx gw
-  class fe,be app
-  class gsEx,gsDl geoCls
-  class dspDb,gsDb,srcDb,bucket db
-  class jobMig,jobGeo job
   class core coreCls
 ```
 
@@ -124,67 +68,106 @@ flowchart LR
 |-----------|-----------|
 | Separação por repositório | Cada capacidade evolui e versiona de forma independente |
 | Source of truth documentada | Esta wiki (`rer-dsp-docs`) é a referência transversal |
-| Migração primeiro | A base geoespacial no destino vem do job de migração |
-| Configuração externa | Mapeamentos de tabela/coluna ficam no YAML, não hardcoded |
+| Core como orquestrador | Configuração, schema e subida da stack local partem do `rer-dsp-core` |
+| Configuração externa | Mapeamentos de tabela/coluna e labels da UI ficam em arquivo, não hardcoded |
 
 ---
 
 ## Visão de contexto
 
+O DSP pode ser adotado em dois cenários distintos, dependendo de qual é a fonte JDBC do adotante ([o que é o DSP?](../o-que-e-o-dsp.md)):
+
+### Cenário 1 — DSP dentro do ecossistema RER
+
+A fonte de dados é o próprio **RER Registration** (o módulo de cadastro do RER, também um DPG). Este é o uso original do DSP: compartilhar os dados ambientais rurais já coletados no cadastro do RER com o público geral.
+
 ```mermaid
 flowchart TB
-  user[Usuário institucional]
-  dev[Desenvolvedor DSP]
-  legado[Sistemas / bancos legados]
-  parceiros[Instituições parceiras]
+  publico[Público geral]
 
   subgraph rer ["Ecossistema RER"]
     reg[RER Registration — cadastro DPG]
     dsp[RER DSP — Data Sharing Platform]
   end
-
-  user -->|UI / APIs| dsp
-  dev -->|jobs e deploys| dsp
-  reg -->|dados ambientais| dsp
-  legado -->|migração ETL| dsp
-  dsp -->|compartilha dados e layers| parceiros
+  reg -->|dados ambientais rurais| dsp
+  dsp -->|compartilha dados e layers| publico
 ```
+
+### Cenário 2 — DSP fora do RER, com outra base de dados
+
+A fonte de dados é qualquer sistema/banco geoespacial próprio do adotante — **sem nenhuma dependência do RER Registration**. O DSP é usado de forma genérica, apenas como plataforma de sincronização, publicação e compartilhamento.
+
+```mermaid
+flowchart TB
+  legado[Banco geoespacial próprio do adotante]
+  publico[Público geral]
+
+  dsp[DSP — Data Sharing Platform]
+
+  legado -->|migração ETL / fonte JDBC| dsp
+  dsp -->|compartilha dados e layers| publico
+```
+
+!!! tip "Mesma arquitetura, fonte diferente"
+    Os dois cenários usam exatamente os mesmos módulos e o mesmo mecanismo de sincronização — a única diferença é de onde vem a fonte JDBC configurada em `./config.sh`. Nada no core, backend, frontend ou job de migração assume que a origem é o RER Registration.
 
 ---
 
 ## Camadas e responsabilidades
 
-| Camada | Componentes | Responsabilidade |
-|--------|-------------|------------------|
-| Apresentação | [rer-dsp-frontend](https://github.com/Rural-Environmental-Registry/rer-dsp-frontend) | Interface web para consulta e compartilhamento |
-| API | [rer-dsp-backend](https://github.com/Rural-Environmental-Registry/rer-dsp-backend) | Contratos REST, autenticação de acesso à plataforma |
-| Domínio | [rer-dsp-core](https://github.com/Rural-Environmental-Registry/rer-dsp-core) | Regras de negócio lógica de domínio, modelos de dados, regras de negócio e utilitários compartilhados entre os demais componentes. |
-| Integração / ETL | [rer-dsp-job-data-migration](https://github.com/Rural-Environmental-Registry/rer-dsp-job-data-migration) | Sync geoespacial source → target, ou seja faz a migração dos dados de um banco para outro. |
-| Geração geo | [rer-dsp-job-geo-file-generation](https://github.com/Rural-Environmental-Registry/rer-dsp-job-geo-file-generation) | Produção de arquivos geoespaciais mais pesados para download rápido evitando sobrecarregar o geoserver. |
-| Publicação geo | Instâncias GeoServer | Layers WMS/WFS e cache. São 2 GeoServer, um para exibição no frontend e um para download das geometrias. |
-| Persistência | PostgreSQL / PostGIS | Dados operacionais e geometrias |
-| Objetos | File Bucket | Arquivos gerados pelo [rer-dsp-job-geo-file-generation](https://github.com/Rural-Environmental-Registry/rer-dsp-job-geo-file-generation) |
-| Documentação | [rer-dsp-docs](https://github.com/Rural-Environmental-Registry/rer-dsp-docs) (esta wiki) | Onboarding e padrões transversais de todos os repositórios |
+| Camada | Componentes | Responsabilidade                                                                      |
+|--------|-------------|---------------------------------------------------------------------------------------|
+| Orquestração / configuração | [rer-dsp-core](https://github.com/Rural-Environmental-Registry/rer-dsp-core) | Sobe bancos, GeoServer e orquestra build/config dos demais módulos via Docker Compose |
+| Apresentação | [rer-dsp-frontend](https://github.com/Rural-Environmental-Registry/rer-dsp-frontend) | Interface web/mapas para consulta e compartilhamento                                  |
+| API | [rer-dsp-backend](https://github.com/Rural-Environmental-Registry/rer-dsp-backend) | Contratos REST, dados de negócio da plataforma                                        |
+| Integração / ETL | [rer-dsp-job-data-migration](https://github.com/Rural-Environmental-Registry/rer-dsp-job-data-migration) | Sincroniza atributos e geometria da fonte do adotante para os bancos do DSP           |
+| Publicação geo | GeoServer | Layers WMS/WFS a partir do banco de exibição                                          |
+| Persistência | PostgreSQL / PostGIS (3 bancos) | Dados operacionais, geometrias e metadados de execução                                |
+| Documentação | [rer-dsp-docs](https://github.com/Rural-Environmental-Registry/rer-dsp-docs) (esta wiki) | Onboarding e padrões transversais de todos os repositórios                            |
+
+---
+
+## O core como camada de orquestração
+
+O `rer-dsp-core` não contém código de aplicação/domínio — sua responsabilidade é exclusivamente de **orquestração e configuração**:
+
+- Sobe os 3 bancos Postgres/PostGIS (dsp-db, dsp-geoserver-exhibition-db, dsp-job-migration-db) e o GeoServer via Docker Compose.
+- Gera, a partir do wizard `./config.sh`, o `adopter-config.yaml` e os arquivos operacionais consumidos pelo backend (`installationConfig.json`, `mapLayersConfig.json`) e pelo job de migração (`application.yaml`).
+- Orquestra o build e a subida do backend, frontend e job de migração.
+- Não tem dependência de runtime sobre os demais módulos — precisa deles apenas no momento do build/orquestração.
+
+Detalhe operacional completo: [rer-dsp-core](../modules/core.md).
+
+---
 
 ## Fluxo de dados
 
 ```mermaid
 flowchart LR
-  A[(Origem)] -->|1. Detecta mudanças| B[dsp-batch]
+  A[(Fonte JDBC<br/>do adotante)] -->|1. Detecta mudanças| B[dsp-batch]
   B -->|2a. bbox + centroid| C[(dsp-db)]
   B -->|2b. geometry| E[(exhibition-db)]
   B -->|3. Metadados| D[(batch_metadata)]
-  E -->|4. Publica| G[GeoServer Exhibition]
-  C -->|5. Consome| F[core / backend / frontend]
-  H[job-geo-file-generation]-->|arquivos| I[(File Bucket)] 
+  E -->|4. Publica| G[GeoServer]
+  C -->|5. Consome| F[backend]
+  F -->|6. REST| H[frontend]
+  G -->|7. WMS| H
 ```
 
-1. **Ingestão / sync** — job de migração faz dual-write: `dsp-db` (negócio + bbox/centroid) e `exhibition-db` (geometria completa)
-2. **Publicação** — GeoServer Exhibition lê **somente** `exhibition-db`
-3. **Consumo** — core/backend/frontend leem `dsp-db` (sem polígonos completos)
-4. **Arquivos** — `job-geo-file-generation` cria os arquivos mais pesados e salva File Bucket.
+1. **Ingestão / sync** — job de migração faz dual-write: `dsp-db` (negócio + bbox/centroid) e `exhibition-db` (geometria completa).
+2. **Publicação** — GeoServer lê **somente** `exhibition-db`.
+3. **Consumo via API** — backend lê `dsp-db` (sem polígonos completos).
+4. **Consumo via UI** — frontend consome a API do backend e o WMS do GeoServer diretamente para os mapas.
 
-Falha em um destino interrompe a execução (fail-fast); reexecução é idempotente. Divergência temporária entre os dois bancos é aceitável até nova execução bem-sucedida.
+!!! tip "Porque não gravar a geometria completa no `dsp-db`?"
+    Em vez de guardar a geometria completa (o polígono inteiro, com todos os seus vértices) no `dsp-db`, o job grava apenas duas versões simplificadas dela:
+
+    - **`boundary_box`** (bbox) — o retângulo envolvente da geometria (menor e maior latitude/longitude).
+    - **`centroid_coordinates`** — o ponto central da geometria.
+
+    Essa é uma escolha de **performance**: consultas, filtros e ordenações que usam bbox/centroide (por exemplo, "quais registros estão dentro desta área" ou cálculos de proximidade) são muito mais leves de processar do que operar sobre polígonos completos, especialmente com grande volumetria de dados. A API e a interface (busca, listagem, KPIs) não precisam do desenho exato do polígono para funcionar — só a camada de mapa (`exhibition-db` → GeoServer) precisa da geometria completa, por isso ela fica isolada em um banco separado.
+
+Detalhe passo a passo com diagrama de sequência: [Fluxo de dados](data-flow.md).
 
 ---
 
@@ -195,31 +178,10 @@ No fluxo do job existem **quatro** papéis de datasource:
 | Papel | Prefixo de config | Conteúdo típico |
 |-------|-------------------|-----------------|
 | Origem | `spring.datasource.source` | Dados legados / cadastro a migrar |
-| Operacional | `spring.datasource.target` → `dsp-db` | Negócio + `boundary_box` + `centroid_coordinates` — **sem** `geometry` completa |
+| Operacional | `spring.datasource.target` → `dsp-db` | Negócio + `boundary_box` + `centroid_coordinates` ([por quê](#fluxo-de-dados)) — **sem** `geometry` completa |
 | Exibição | `spring.datasource.geo-target` → `dsp-geoserver-exhibition-db` | Mesmas tabelas `dsp.*` **com** `geometry` completa |
 | Metadados | `spring.datasource.batch` | Controle Spring Batch (`BATCH_*`) |
 
 Contrato completo (colunas, leitores/escritores, SRID via YAML): [Bancos de dados](databases.md).
 
-
-## Jobs
-
-| Job / repositório | Entrada | Saída | Quando usar |
-|-------------------|---------|-------|-------------|
-| `rer-dsp-job-data-migration` | DB source | DB target + metadados | **Onboarding e sync contínuo da base geo** |
-| `rer-dsp-job-geo-file-generation` | DB / arquivos | Arquivos em File Bucket ou filesystem | Geração de pacotes geo |
-
-Detalhe operacional do primeiro: [Migração — visão geral](../migration/overview.md) e [Job data-migration](../migration/rer-dsp-job-data-migration.md).
-
 ---
-
-## Relação com o onboarding
-
-```mermaid
-flowchart TD
-  wiki[Ler wiki DSP] --> gs[getting-started]
-  gs --> mig[Executar rer-dsp-job-data-migration]
-  mig --> val[Validar destino]
-  val --> arch[Aprofundar arquitetura]
-  arch --> other[Frontend / backend / GeoServer / File Bucket]
-```
