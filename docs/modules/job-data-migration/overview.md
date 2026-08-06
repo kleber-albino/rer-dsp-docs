@@ -14,7 +14,7 @@ O DSP trabalha com uma base PostGIS própria (dois destinos), sincronizada a par
 |---------|------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | Unidades administrativas | level-1, level-2, level-3 | Hierarquia configurável via YAML — 3 níveis hierárquicos (ex.: continente → país → divisão administrativa)                                                                                            |
 | Área de interesse | `area-of-interest-geoserver-job` | Ex.: imóveis rurais                                                                                                                                                                                   |
-| Camadas genéricas (opcional) | `layer-jobs` | Qualquer tabela PostGIS extra do adotante, publicada só como layer WMS (não vai para o `dsp-db` operacional). Detalhe: [Configuração e execução](configuration.md#camadas-genericas-alem-de-l1l2l3aoi) |
+| Camadas genéricas (opcional) | `layer-jobs` | Qualquer tabela PostGIS extra do adotante, publicada só como layer WMS (não vai para o `dsp-db` operacional). Pré-requisito: área de interesse já migrada. Guia completo: [Migração de camadas genéricas](layer-migration.md) |
 
 O significado de cada level não está fixo no código — vem das tabelas e colunas configuradas no YAML.
 
@@ -73,9 +73,10 @@ admin-unit level-1
     → admin-unit level-2
         → admin-unit level-3
             → area-of-interest
+                → camadas genéricas (layer-jobs)
 ```
 
-Essa ordem é obrigatória por causa de FKs no destino: filhos referenciam pais já migrados.
+Essa ordem é obrigatória por causa de FKs no destino: filhos referenciam pais já migrados; camadas genéricas dependem de `area_of_interest_id` já existir no geo-target. O `JobRunner` dos jobs fixos roda antes do runner de camadas (`@Order(1)` e `@Order(2)`).
 
 ## Estratégias de change detection
 
@@ -100,4 +101,5 @@ Essa ordem é obrigatória por causa de FKs no destino: filhos referenciam pais 
 |------|--------|
 | Contrato dos bancos (4 papéis) | [Bancos de dados](../../architecture/databases.md) |
 | YAML, datasources e comandos | [Configuração e execução](configuration.md) |
+| Camadas genéricas (tabelas PostGIS extras) | [Migração de camadas genéricas](layer-migration.md) |
 | Checklist e queries pós-migração | [Validação pós-migração](validation.md) |

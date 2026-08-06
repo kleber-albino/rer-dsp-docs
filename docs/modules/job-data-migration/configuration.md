@@ -249,7 +249,7 @@ batch:
 
 ### Camadas genéricas (além de L1/L2/L3/AOI)
 
-Além dos quatro jobs fixos (unidades administrativas L1/L2/L3 e área de interesse), o job aceita uma lista de **camadas genéricas** em `batch.layers` — qualquer tabela PostGIS adicional do adotante que precise ser publicada como layer WMS, sem virar um job dedicado.
+Além dos quatro jobs fixos (unidades administrativas L1/L2/L3 e área de interesse), o job aceita uma lista de **camadas genéricas** em `batch.layers` — qualquer tabela PostGIS adicional do adotante que precise ser publicada como layer WMS, sem virar um job dedicado nem exigir mapeamento coluna a coluna (o job introspecciona o schema sozinho).
 
 ```yaml
 batch:
@@ -258,18 +258,9 @@ batch:
       area-of-interest-id-column: conservation_unit_id
 ```
 
-| Propriedade | Descrição |
-|-------------|-----------|
-| `source-table` | Tabela de origem (`schema.tabela`) a ser migrada como camada extra |
-| `area-of-interest-id-column` | Coluna de vínculo com a área de interesse; vira `area_of_interest_id` no destino |
+Só grava no banco **geo-target** (não toca no `dsp-db` operacional) e só roda se `execution-jobs.layer-jobs: true`.
 
-Diferenças em relação aos jobs fixos:
-
-- O job cria automaticamente `dsp.<tabela>` no banco **geo-target** (`exhibition-db`) — **não** grava no `dsp-db` operacional, só na camada de exibição/mapa.
-- Só roda se a flag `execution-jobs.layer-jobs: true` estiver habilitada.
-- Cada entrada da lista vira uma camada publicável no GeoServer, do mesmo jeito que L1/L2/L3/AOI.
-
-No wizard `./config.sh` do `rer-dsp-core`, essas camadas são configuradas no estágio **5/5 — Jobs de migração** (seção `etl.layers` do `adopter-config.yaml`), que o core traduz para `batch.layers` neste arquivo. Detalhe do wizard: [rer-dsp-core](../core.md#configsh).
+Guia completo (propriedades, introspecção automática, limitações, erros comuns): [Migração de camadas genéricas](layer-migration.md).
 
 ### Conexões dos quatro bancos
 

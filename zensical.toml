@@ -34,7 +34,7 @@ site_author = "Rural Environmental Registry"
 #
 # Read more: https://zensical.org/docs/setup/basics/#copyright
 copyright = """
-Copyright &copy; 2026 Rural Environmental Registry — GPL-3.0
+Rural Environmental Registry — GPL-3.0
 """
 
 # Zensical supports both implicit navigation and explicitly defined navigation.
@@ -68,6 +68,7 @@ nav = [
       { "rer-dsp-job-data-migration" = [
           { "Visão geral" = "modules/job-data-migration/overview.md" },
           { "Configuração e execução" = "modules/job-data-migration/configuration.md" },
+          { "Migração de camadas genéricas" = "modules/job-data-migration/layer-migration.md" },
           { "Validação pós-migração" = "modules/job-data-migration/validation.md" },
         ]
       },
