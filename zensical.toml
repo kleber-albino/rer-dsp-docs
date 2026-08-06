@@ -49,7 +49,15 @@ nav = [
   { "Começando" = "getting-started.md" },
   { "Arquitetura" = [
       { "Visão geral" = "architecture/overview.md" },
-      { "Opções de diagrama" = "architecture/diagram-options.md" },
+      { "Bancos de dados" = "architecture/databases.md" },
+    ]
+  },
+  { "Backend" = [
+      { "Configuração da instalação" = "backend/installation-config.md" },
+    ]
+  },
+  { "Frontend" = [
+      { "Componente de mapa" = "frontend/map-component.md" },
     ]
   },
   { "Migração" = [

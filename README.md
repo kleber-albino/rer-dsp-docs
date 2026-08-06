@@ -69,7 +69,14 @@ A saída fica em `site/`. Essa pasta não vai para o Git; o CI gera de novo no d
 
 ## Publicação
 
-Push em `main` dispara o workflow [Documentation](.github/workflows/docs.yml), que executa `zensical build --clean` e publica no **GitHub Pages**.
+Antes do primeiro deploy, habilite o GitHub Pages **uma vez**:
+
+1. No repositório: **Settings → Pages**
+2. Em **Build and deployment → Source**, escolha **GitHub Actions**
+
+Sem isso, o job `deploy` falha com `Get Pages site failed` / `Not Found`.
+
+Depois, push em `main` dispara o workflow [Documentation](.github/workflows/docs.yml), que executa `zensical build --clean` e publica no **GitHub Pages**. Se o primeiro run já falhou, reexecute o workflow em **Actions**.
 
 ## Licença
 

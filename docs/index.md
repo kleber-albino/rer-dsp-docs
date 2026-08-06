@@ -60,12 +60,12 @@ flowchart LR
 ```mermaid
 flowchart LR
   srcDb[("SEU DATABASE<br/>Banco da sua organização que você quer migrar os dados.<br/>Fonte a migrar para o DSP.")]
-  jobMig["JOB-DB-MIGRATION<br/>ETL Spring Batch.<br/>Sincroniza origem (SEU DATABASE) → DSP DB."]
+  jobMig["JOB-DB-MIGRATION<br/>ETL Spring Batch.<br/>Dual-write: origem → dsp-db + exhibition-db."]
   core["CORE<br/>SETUP · CONFIG · START.<br/>Prepara bancos e dispara migração."]
   jobGeo["JOB-GEO-FILE<br/>Gera arquivos geoespaciais.<br/>Lê DSP DB e grava no bucket."]
 
-  dspDb[("DSP DB<br/>Banco operacional PostGIS.<br/>Dados consumidos pela API.")]
-  gsDb[("GEOSERVER DB<br/>Base das layers geoespaciais.<br/>Alimenta Exhibition e Download.")]
+  dspDb[("DSP DB<br/>Operacional: negócio + bbox/centroid.")]
+  gsDb[("EXHIBITION DB<br/>Geometria completa dsp.*<br/>GeoServer Exhibition.")]
   bucket[("FILE-BUCKET<br/>Armazena arquivos e artefatos.<br/>Exports, pacotes e anexos.")]
 
   be["DSP BACKEND<br/>API REST e regras de negócio.<br/>Autenticação e orquestração."]
@@ -78,6 +78,7 @@ flowchart LR
 
   srcDb --- jobMig
   jobMig --- dspDb
+  jobMig --- gsDb
   core --- jobMig
   core --- dspDb
   core --- gsDb
@@ -121,11 +122,11 @@ flowchart LR
 | **NGINX** | Gateway / reverse proxy de entrada | — |
 | **DSP Frontend** | Interface web (Platform Services) | [rer-dsp-frontend](https://github.com/Rural-Environmental-Registry/rer-dsp-frontend) |
 | **DSP Backend** | API e lógica de negócio | [rer-dsp-backend](https://github.com/Rural-Environmental-Registry/rer-dsp-backend) |
-| **DSP DB** | Banco operacional da plataforma | — |
-| **GEOSERVER DB** | Banco das layers geoespaciais | — |
-| **GEOSERVER-EXIBITION** | Publicação / exibição de maps (WMS/WFS) | — |
+| **DSP DB** | Banco operacional — negócio + bbox/centroid (API) | — |
+| **EXHIBITION DB** | Geometria completa `dsp.*` — só GeoServer Exhibition | — |
+| **GEOSERVER-EXHIBITION** | Publicação / exibição de maps (WMS/WFS) — porta 22668 | — |
 | **GEOSERVER-DOWNLOAD** | Download de dados geoespaciais | — |
-| **JOB-DB-MIGRATION** | ETL: migra dados da origem (`SEU DATABASE`) → DSP DB | [rer-dsp-job-data-migration](https://github.com/Rural-Environmental-Registry/rer-dsp-job-data-migration) |
+| **JOB-DB-MIGRATION** | ETL: dual-write origem → dsp-db + exhibition-db | [rer-dsp-job-data-migration](https://github.com/Rural-Environmental-Registry/rer-dsp-job-data-migration) |
 | **JOB-GEO-FILE** | Gera arquivos geo a partir do DSP DB → FILE-BUCKET | [rer-dsp-job-geo-file-generation](https://github.com/Rural-Environmental-Registry/rer-dsp-job-geo-file-generation) |
 | **FILE-BUCKET** | Armazenamento de arquivos e artefatos | — |
 | **CORE** | SETUP, CONFIG e START dos bancos e do job de migração | [rer-dsp-core](https://github.com/Rural-Environmental-Registry/rer-dsp-core) |
@@ -146,7 +147,7 @@ Detalhes em [Arquitetura](architecture/overview.md).
 | 5 | Conferir contagens, status do Batch e tabelas | [Validação](migration/validation.md) |
 
 !!! warning "Ordem dos jobs"
-    Execute sempre na ordem **level-1 → level-2 → level-3 → rural-property** quando houver dependência de chave estrangeira no destino.
+    Execute sempre na ordem **level-1 → level-2 → level-3 → area-of-interest** quando houver dependência de chave estrangeira no destino.
 
 ---
 
@@ -155,17 +156,18 @@ Detalhes em [Arquitetura](architecture/overview.md).
 A migração inicial é o coração do onboarding. O banco de **origem** (`source`) é o banco da sua organização (legado, cadastro ou outro módulo) que você pretende trazer para as aplicações RER/DSP. O job Spring Batch:
 
 1. Lê geometrias e atributos do **banco de origem** (`source`)
-2. Detecta mudanças em relação ao **destino** (`target` — base PostGIS do DSP)
-3. Faz UPSERT (e, na estratégia `DEFAULT`, remove órfãos)
+2. Detecta mudanças em relação aos **dois destinos** (`dsp-db` e `exhibition-db`)
+3. Faz dual-write: bbox/centroid no operacional, geometry no exhibition (UPSERT; estratégia `DEFAULT` remove órfãos em ambos)
 4. Registra a execução em **metadados** (`batch_metadata`)
-5. Deixa o destino pronto para consumo por core, backend, frontend e GeoServer
+5. Deixa os destinos prontos para API (`dsp-db`) e GeoServer Exhibition (`exhibition-db`)
 
 ```mermaid
 flowchart LR
   org[(Seu banco de dados<br/>source)] -->|1. Lê e detecta mudanças| job[dsp-batch]
-  job ---|2. UPSERT / DELETE| tgt[(Destino PostGIS<br/>target)]
+  job ---|2a. bbox + centroid| tgt[(dsp-db)]
+  job ---|2b. geometry| geo[(exhibition-db)]
   job ---|3. Metadados| meta[(batch_metadata)]
-  tgt ---|4. Publica| gs[GeoServer]
+  geo ---|4. Publica| gs[GeoServer Exhibition]
   tgt ---|5. Consome| apps[core / backend / frontend]
 ```
 
@@ -179,6 +181,9 @@ Visão completa: [Migração — visão geral](migration/overview.md).
 |-----------|----------|
 | [Começando](getting-started.md) | Passo a passo do primeiro run local |
 | [Arquitetura](architecture/overview.md) | Camadas, containers e fluxo de dados |
+| [Bancos de dados](architecture/databases.md) | Contrato dos 4 papéis (source, dsp-db, exhibition-db, batch) |
+| [Configuração da instalação](backend/installation-config.md) | Labels L1/L2/L3, telas e KPIs via JSON externo |
+| [Componente de mapa](frontend/map-component.md) | `map_component` na Home; camadas via `/map/getBaseMaps` e `/map/getLayers` |
 | [Migração — visão geral](migration/overview.md) | Conceitos, ordem e estratégias |
 | [Job data-migration](migration/rer-dsp-job-data-migration.md) | YAML, datasources, comandos e pipeline |
 | [Validação](migration/validation.md) | Checklist e queries pós-migração |

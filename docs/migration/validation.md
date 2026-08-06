@@ -36,7 +36,7 @@ A validação fecha o ciclo iniciado em [Começando](../getting-started.md).
 - [ ] Sem steps `FAILED` em `BATCH_STEP_EXECUTION`
 - [ ] Contagem do destino coerente com a origem (respeitando `where-clause` / estratégia)
 - [ ] PK/unique presentes nas colunas de conflito
-- [ ] Amostra de geometrias com `ST_IsValid` e SRID esperado
+- [ ] Amostra de geometrias com `ST_IsValid` e SRID conforme `srid` do YAML — **em ambos** os destinos (`dsp-db`: bbox/centroid; `exhibition-db`: geometry)
 - [ ] FKs de hierarquia resolvidas (se aplicável)
 - [ ] Layer GeoServer aponta para a tabela/view correta (quando houver publicação)
 
@@ -162,7 +162,18 @@ LIMIT 20;
 
 ## 2. Contagens origem × destino
 
-Adapte schema/tabela ao seu YAML. Exemplo alinhado ao demo continente (level-1):
+Valide **os dois destinos** após cada job. Adapte schema/tabela ao seu YAML.
+
+### dsp-db (operacional — sem geometry completa)
+
+```sql
+-- Contagem de registros com bbox preenchido
+SELECT COUNT(*) AS dsp_db_count
+FROM target_admin_units.target_l1_continent
+WHERE boundary_box IS NOT NULL;
+```
+
+### exhibition-db (geometria completa)
 
 ```sql
 -- Origem
@@ -170,11 +181,13 @@ SELECT COUNT(*) AS source_count
 FROM source_admin_units.source_l1_continents
 WHERE source_continent_geom IS NOT NULL;
 
--- Destino
-SELECT COUNT(*) AS target_count
+-- Destino exhibition
+SELECT COUNT(*) AS exhibition_count
 FROM target_admin_units.target_l1_continent
 WHERE target_continent_geometry IS NOT NULL;
 ```
+
+Contagens entre origem e `exhibition-db` devem ser coerentes. Em `dsp-db`, confira que `boundary_box` e `centroid_coordinates` acompanham a mesma quantidade de registros.
 
 | Estratégia | Expectativa |
 |------------|-------------|
@@ -227,12 +240,28 @@ LIMIT 50;
 
 ## 4. Geometrias
 
+### exhibition-db — geometry completa
+
 ```sql
 SELECT
   COUNT(*) AS total,
   COUNT(*) FILTER (WHERE NOT ST_IsValid(target_continent_geometry)) AS invalidas,
   COUNT(*) FILTER (WHERE ST_SRID(target_continent_geometry) <> 4326) AS srid_diferente,
   COUNT(*) FILTER (WHERE target_continent_geometry IS NULL) AS nulas
+FROM target_admin_units.target_l1_continent;
+```
+
+Substitua `4326` pelo valor de `srid` do bloco YAML correspondente.
+
+### dsp-db — bbox e centroid
+
+```sql
+SELECT
+  COUNT(*) AS total,
+  COUNT(*) FILTER (WHERE NOT ST_IsValid(boundary_box)) AS bbox_invalidas,
+  COUNT(*) FILTER (WHERE ST_SRID(boundary_box) <> 4326) AS bbox_srid_diferente,
+  COUNT(*) FILTER (WHERE NOT ST_IsValid(centroid_coordinates)) AS centroid_invalidos,
+  COUNT(*) FILTER (WHERE ST_SRID(centroid_coordinates) <> 4326) AS centroid_srid_diferente
 FROM target_admin_units.target_l1_continent;
 ```
 
@@ -249,7 +278,7 @@ LIMIT 10;
 | Verificação | Critério de aceite |
 |-------------|--------------------|
 | `invalidas` | 0 (ou lista conhecida tratada à parte) |
-| `srid_diferente` | 0 em relação ao `srid` do YAML |
+| `srid_diferente` | 0 em relação ao `srid` do YAML (validar em **exhibition-db** e em bbox/centroid do **dsp-db**) |
 | `nulas` | Compatível com regras de negócio |
 
 ---
@@ -304,8 +333,8 @@ logging:
 | Checagem | Como |
 |----------|------|
 | Layer existe | UI / REST do GeoServer com o mesmo `layer-name` do YAML |
-| Store aponta para o target | Conferir datastore JDBC/PostGIS |
-| Preview WMS | Bounding box coerente com a amostra SQL |
+| Store aponta para exhibition-db | Conferir datastore JDBC/PostGIS → `dsp-geoserver-exhibition-db` (não `dsp-db`) |
+| Preview WMS | Bounding box coerente com a amostra SQL do `exhibition-db` |
 | Cache | Hoje o job **só loga** o pedido de refresh — invalidar manualmente se necessário |
 
 !!! todo "Script de smoke GeoServer"
@@ -331,8 +360,8 @@ logging:
 Sugestão de evidência mínima para o novo membro anexar (issue/MR):
 
 1. Trecho de `SELECT` com `COMPLETED` do job executado
-2. Contagens source/target
-3. Resultado de `ST_IsValid` / SRID
+2. Contagens source / exhibition-db e bbox em dsp-db
+3. Resultado de `ST_IsValid` / SRID em **dsp-db** (bbox/centroid) e **exhibition-db** (geometry)
 4. (Opcional) print ou URL do preview GeoServer
 
 !!! todo "Template de evidência"

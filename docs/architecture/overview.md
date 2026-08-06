@@ -59,12 +59,12 @@ flowchart LR
 ```mermaid
 flowchart LR
   srcDb[("SEU DATABASE<br/>Banco da sua organização que você quer migrar os dados.<br/>Fonte a migrar para o DSP.")]
-  jobMig["JOB-DB-MIGRATION<br/>ETL Spring Batch.<br/>Sincroniza origem (SEU DATABASE) → DSP DB."]
+  jobMig["JOB-DB-MIGRATION<br/>ETL Spring Batch.<br/>Dual-write: origem → dsp-db + exhibition-db."]
   core["CORE<br/>SETUP · CONFIG · START.<br/>Prepara bancos e dispara migração."]
   jobGeo["JOB-GEO-FILE<br/>Gera arquivos geoespaciais.<br/>Lê DSP DB e grava no bucket."]
 
-  dspDb[("DSP DB<br/>Banco operacional PostGIS.<br/>Dados consumidos pela API.")]
-  gsDb[("GEOSERVER DB<br/>Base das layers geoespaciais.<br/>Alimenta Exhibition e Download.")]
+  dspDb[("DSP DB<br/>Operacional: negócio + bbox/centroid.<br/>Sem geometry completa.")]
+  gsDb[("EXHIBITION DB<br/>Geometria completa dsp.*<br/>Só GeoServer Exhibition.")]
   bucket[("FILE-BUCKET<br/>Armazena arquivos e artefatos.<br/>Exports, pacotes e anexos.")]
 
   be["DSP BACKEND<br/>API REST e regras de negócio.<br/>Autenticação e orquestração."]
@@ -77,6 +77,7 @@ flowchart LR
 
   srcDb --- jobMig
   jobMig --- dspDb
+  jobMig --- gsDb
   core --- jobMig
   core --- dspDb
   core --- gsDb
@@ -170,29 +171,35 @@ flowchart TB
 ```mermaid
 flowchart LR
   A[(Origem)] -->|1. Detecta mudanças| B[dsp-batch]
-  B -->|2. UPSERT / DELETE| C[(Destino PostGIS)]
+  B -->|2a. bbox + centroid| C[(dsp-db)]
+  B -->|2b. geometry| E[(exhibition-db)]
   B -->|3. Metadados| D[(batch_metadata)]
-  C -->|4. Publica| E[GeoServer]
+  E -->|4. Publica| G[GeoServer Exhibition]
   C -->|5. Consome| F[core / backend / frontend]
-  G[job-geo-file-generation]-->|arquivos| H[(File Bucket)] 
+  H[job-geo-file-generation]-->|arquivos| I[(File Bucket)] 
 ```
 
-1. **Ingestão / sync** — job de migração atualiza o destino
-2. **Publicação** — GeoServer expõe layers a partir do destino
-3. **Consumo** — core/backend/frontend e parceiros leem a base DSP
+1. **Ingestão / sync** — job de migração faz dual-write: `dsp-db` (negócio + bbox/centroid) e `exhibition-db` (geometria completa)
+2. **Publicação** — GeoServer Exhibition lê **somente** `exhibition-db`
+3. **Consumo** — core/backend/frontend leem `dsp-db` (sem polígonos completos)
 4. **Arquivos** — `job-geo-file-generation` cria os arquivos mais pesados e salva File Bucket.
+
+Falha em um destino interrompe a execução (fail-fast); reexecução é idempotente. Divergência temporária entre os dois bancos é aceitável até nova execução bem-sucedida.
 
 ---
 
 ## Bancos de dados
 
-No fluxo do job de migração existem **três** papéis de datasource:
+No fluxo do job existem **quatro** papéis de datasource:
 
 | Papel | Prefixo de config | Conteúdo típico |
 |-------|-------------------|-----------------|
 | Origem | `spring.datasource.source` | Dados legados / cadastro a migrar |
-| Destino | `spring.datasource.target` | Base PostGIS do DSP |
+| Operacional | `spring.datasource.target` → `dsp-db` | Negócio + `boundary_box` + `centroid_coordinates` — **sem** `geometry` completa |
+| Exibição | `spring.datasource.geo-target` → `dsp-geoserver-exhibition-db` | Mesmas tabelas `dsp.*` **com** `geometry` completa |
 | Metadados | `spring.datasource.batch` | Controle Spring Batch (`BATCH_*`) |
+
+Contrato completo (colunas, leitores/escritores, SRID via YAML): [Bancos de dados](databases.md).
 
 
 ## Jobs

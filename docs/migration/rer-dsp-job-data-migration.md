@@ -9,16 +9,14 @@ Documentação do repositório de ETL geoespacial do DSP (`br.car:dsp-batch`). �
   - [Onde este job se encaixa](#onde-este-job-se-encaixa)
 - [Jobs disponíveis](#jobs-disponiveis)
 - [DataSources](#datasources)
-  - [Source — SEU DATABASE](#source--seu-database)
-  - [Target — DSP DB](#target--dsp-db)
-  - [Batch — batch_metadata](#batch--batch_metadata)
-  - [Exemplo local](#exemplo-ambiente-local-na-porta-6666)
+  - [Source — SEU DATABASE](#source-seu-database)
+  - [Target — DSP DB](#target-dsp-db)
+  - [Geo-target — Exhibition DB](#geo-target-exhibition-db)
+  - [Batch — batch_metadata](#batch-batch_metadata)
 - [Configuração YAML](#configuracao-yaml)
 - [Paralelização e partição](#paralelizacao-e-particao)
 - [Fluxo interno](#fluxo-interno)
 - [Comandos de execução](#comandos-de-execucao)
-- [Docker Compose local](#docker-compose-local)
-- [Responsabilidades dos componentes Java](#responsabilidades-dos-componentes-java)
 
 ---
 
@@ -38,12 +36,13 @@ Documentação do repositório de ETL geoespacial do DSP (`br.car:dsp-batch`). �
 
 ## Propósito
 
-Migrar e sincronizar **atributos + geometrias** de um banco **origem** para um banco **destino**, com:
+Migrar e sincronizar **atributos + geometrias** de um banco **origem** para **dois destinos** (`dsp-db` e `exhibition-db`), com:
 
 - Detecção de mudanças
 - Leitura particionada e paralela
-- UPSERT no destino
-- Remoção de órfãos (estratégia `DEFAULT`)
+- Dual-write: bbox/centroid no operacional, geometry no exhibition
+- Fail-fast — falha em um destino interrompe a execução; reexecução idempotente
+- Remoção de órfãos (estratégia `DEFAULT`) em ambos os destinos
 - Registro de execução em `batch_metadata`
 
 ### Onde este job se encaixa
@@ -53,12 +52,12 @@ No mapa da arquitetura DSP, **este repositório é o `JOB-DB-MIGRATION`** — de
 ```mermaid
 flowchart LR
   srcDb[("SEU DATABASE<br/>Banco da sua organização que você quer migrar os dados.<br/>Fonte a migrar para o DSP.")]
-  jobMig["<b>JOB-DB-MIGRATION</b><br/><b>ETL Spring Batch.</b><br/><b>Sincroniza origem → DSP DB.</b><br/><b>★ você está aqui</b>"]
+  jobMig["<b>JOB-DB-MIGRATION</b><br/><b>ETL Spring Batch.</b><br/><b>Dual-write: origem → dsp-db + exhibition-db.</b><br/><b>★ você está aqui</b>"]
   core["CORE<br/>SETUP · CONFIG · START.<br/>Prepara bancos e dispara migração."]
   jobGeo["JOB-GEO-FILE<br/>Gera arquivos geoespaciais.<br/>Lê DSP DB e grava no bucket."]
 
-  dspDb[("DSP DB<br/>Banco operacional PostGIS.<br/>Dados consumidos pela API.")]
-  gsDb[("GEOSERVER DB<br/>Base das layers geoespaciais.<br/>Alimenta Exhibition e Download.")]
+  dspDb[("DSP DB<br/>Operacional: negócio + bbox/centroid.")]
+  gsDb[("EXHIBITION DB<br/>Geometria completa dsp.*")]
   bucket[("FILE-BUCKET<br/>Armazena arquivos e artefatos.<br/>Exports, pacotes e anexos.")]
 
   be["DSP BACKEND<br/>API REST e regras de negócio.<br/>Autenticação e orquestração."]
@@ -71,6 +70,7 @@ flowchart LR
 
   srcDb --- jobMig
   jobMig --- dspDb
+  jobMig --- gsDb
   core --- jobMig
   core --- dspDb
   core --- gsDb
@@ -112,29 +112,32 @@ Diagrama completo da plataforma: [Arquitetura](../architecture/overview.md#diagr
 | `admin-unit-level-1-geoserver-job` | `adminUnitLevel1GeoserverJob` | `batch.admin-unit.level-1` |
 | `admin-unit-level-2-geoserver-job` | `adminUnitLevel2GeoserverJob` | `batch.admin-unit.level-2` |
 | `admin-unit-level-3-geoserver-job` | `adminUnitLevel3GeoserverJob` | `batch.admin-unit.level-3` |
-| `rural-property-geoserver-job` | `ruralPropertyGeoserverJob` | `batch.rural-property` |
+| `area-of-interest-geoserver-job` | `areaOfInterestGeoserverJob` | `batch.area-of-interest` |
 
-Ordem no `JobRunner`: **L1 → L2 → L3 → rural-property**.
+Ordem no `JobRunner`: **L1 → L2 → L3 → area-of-interest**.
 
 ```yaml
 execution-jobs:
   admin-unit-level-1-geoserver-job: true
   admin-unit-level-2-geoserver-job: false
   admin-unit-level-3-geoserver-job: false
-  rural-property-geoserver-job: false
+  area-of-interest-geoserver-job: false
 ```
 
 ---
 
 ## DataSources
 
-A auto-configuração JDBC do Boot é **excluída**. Três beans manuais — cada um aponta para um banco diferente:
+A auto-configuração JDBC do Boot é **excluída**. Quatro beans manuais — cada um aponta para um banco diferente:
 
 | Bean | Qualifier | Prefixo YAML | Banco no mapa | Uso |
 |------|-----------|--------------|---------------|-----|
 | `dataSource` | `@Primary` | `spring.datasource.batch` | `batch_metadata` | JobRepository (`BATCH_*`) |
 | `sourceDataSource` | `sourceDataSource` | `spring.datasource.source` | **SEU DATABASE** | Leitura / change detection / partição |
-| `targetDataSource` | `targetDataSource` | `spring.datasource.target` | **DSP DB** | UPSERT / DELETE |
+| `targetDataSource` | `targetDataSource` | `spring.datasource.target` | **DSP DB** | UPSERT negócio + `boundary_box` + `centroid_coordinates` |
+| `geoTargetDataSource` | `geoTargetDataSource` | `spring.datasource.geo-target` | **EXHIBITION DB** | UPSERT `geometry` + bbox/centroid |
+
+Contrato completo dos papéis: [Bancos de dados](../architecture/databases.md).
 
 Abaixo, o mesmo mapa da arquitetura com **um banco em destaque** por vez (os demais em cinza).
 
@@ -197,7 +200,9 @@ flowchart LR
 
 ### Target — DSP DB
 
-`spring.datasource.target` → gravação no destino (ex: `target_geo_import_db`).
+`spring.datasource.target` → gravação no destino operacional (ex: `dsp-db`).
+
+O writer persiste atributos de negócio, `boundary_box` (Polygon) e `centroid_coordinates` (Point). **Não** grava coluna `geometry` completa neste banco.
 
 ```mermaid
 flowchart LR
@@ -207,8 +212,8 @@ flowchart LR
   jobGeo["JOB-GEO-FILE<br/>Gera arquivos geo"]
   batchMeta[("batch_metadata<br/>Tabelas BATCH")]
 
-  dspDb[("DSP DB<br/>destino / spring.datasource.target<br/>★ este datasource")]
-  gsDb[("GEOSERVER DB<br/>Layers geoespaciais")]
+  dspDb[("DSP DB<br/>target / spring.datasource.target<br/>bbox + centroid<br/>★ este datasource")]
+  gsDb[("EXHIBITION DB<br/>geo-target")]
   bucket[("FILE-BUCKET<br/>Arquivos e artefatos")]
 
   be["DSP BACKEND<br/>API REST"]
@@ -250,6 +255,66 @@ flowchart LR
 
   class nginx,fe,be,gsEx,gsDl,srcDb,gsDb,bucket,jobMig,jobGeo,core,batchMeta muted
   class dspDb here
+```
+
+### Geo-target — Exhibition DB
+
+`spring.datasource.geo-target` → gravação no banco de exibição (ex: `dsp-geoserver-exhibition-db`).
+
+O writer persiste os mesmos atributos de negócio **mais** a coluna `geometry` completa, além de `boundary_box` e `centroid_coordinates`. GeoServer Exhibition aponta **somente** para este banco.
+
+```mermaid
+flowchart LR
+  srcDb[("SEU DATABASE<br/>origem")]
+  jobMig["JOB-DB-MIGRATION<br/>ETL Spring Batch"]
+  core["CORE<br/>SETUP · CONFIG · START"]
+  jobGeo["JOB-GEO-FILE<br/>Gera arquivos geo"]
+  batchMeta[("batch_metadata<br/>Tabelas BATCH")]
+
+  dspDb[("DSP DB<br/>operacional")]
+  gsDb[("EXHIBITION DB<br/>geo-target / spring.datasource.geo-target<br/>geometry completa<br/>★ este datasource")]
+  bucket[("FILE-BUCKET<br/>Arquivos e artefatos")]
+
+  be["DSP BACKEND<br/>API REST"]
+  fe["DSP FRONTEND<br/>Interface web"]
+
+  gsEx["GEOSERVER-EXHIBITION<br/>WMS/WFS"]
+  gsDl["GEOSERVER-DOWNLOAD<br/>Exportação"]
+
+  nginx["NGINX<br/>Gateway HTTP"]
+
+  srcDb --- jobMig
+  jobMig --- dspDb
+  jobMig --- gsDb
+  jobMig --- batchMeta
+  core --- jobMig
+  core --- dspDb
+  core --- gsDb
+  dspDb --- jobGeo
+  jobGeo --- bucket
+
+  be --- dspDb
+  gsEx --- gsDb
+  gsDl --- gsDb
+  gsEx --- be
+  gsEx --- gsDl
+
+  fe --- be
+  fe --- bucket
+  fe --- gsEx
+  fe --- gsDl
+
+  nginx --- fe
+  nginx --- be
+  nginx --- gsEx
+  nginx --- gsDl
+  nginx --- bucket
+
+  classDef muted fill:#94a3b822,color:#64748b,stroke:#94a3b8,stroke-width:1px
+  classDef here fill:#b4530944,color:#92400e,stroke:#b45309,stroke-width:3px
+
+  class nginx,fe,be,gsEx,gsDl,srcDb,dspDb,bucket,jobMig,jobGeo,core,batchMeta muted
+  class gsDb here
 ```
 
 ### Batch — batch_metadata
@@ -352,7 +417,7 @@ batch:
 | `partition-column` | não | Coluna de fatiamento (default = PK) |
 | `where-clause` | não | Filtro SQL adicional |
 | `layer-name` | sim* | Nome da layer no GeoServer |
-| `srid` | sim | SRID das geometrias |
+| `srid` | sim | SRID aplicado na escrita (informado por job no YAML; **não** fixo no DDL) |
 | `change-detection-strategy` | sim | `DEFAULT` ou `DATE_RANGE` |
 | `start-date` / `end-date` | se DATE_RANGE | Intervalo inclusivo |
 
@@ -391,7 +456,7 @@ comparison-columns:
 
 ```yaml
 batch:
-  rural-property:
+  area-of-interest:
     source-table: property
     target-table: property
     primary-key: id
@@ -442,7 +507,7 @@ parallelization:
       chunk-size: 100
       page-size: 1000
       queue-capacity: 100
-    ruralPropertyGeoserverJob:
+    areaOfInterestGeoserverJob:
       enabled: false
       thread-pool-size: 1
       chunk-size: 100
@@ -491,8 +556,10 @@ sequenceDiagram
     Dec->>Part: criar partições
     loop workers
       Part->>W: minId/maxId
-      W->>Pers: UPSERT
+      W->>Pers: dual-write UPSERT
     end
+    Pers->>Pers: dsp-db: bbox + centroid
+    Pers->>Pers: exhibition-db: geometry
     Pers->>L: afterJob (log refresh)
   end
 ```
@@ -527,7 +594,7 @@ A URL `spring.datasource.batch` precisa apontar para **esse** banco.
 
 ### 2. Subir a aplicação
 
-Na subida, o `JobRunner` dispara só os jobs com flag `true` em `execution-jobs` (ordem L1 → L2 → L3 → rural-property). A API HTTP sobe na porta **8086**.
+Na subida, o `JobRunner` dispara só os jobs com flag `true` em `execution-jobs` (ordem L1 → L2 → L3 → area-of-interest). A API HTTP sobe na porta **8086**.
 
 **Desenvolvimento** (recompila e sobe):
 
@@ -553,7 +620,7 @@ Para testar um nível específico sem alterar `application.yaml`, passe as flags
 --execution-jobs.admin-unit-level-1-geoserver-job=true \
 --execution-jobs.admin-unit-level-2-geoserver-job=true \
 --execution-jobs.admin-unit-level-3-geoserver-job=false \
---execution-jobs.rural-property-geoserver-job=false"
+--execution-jobs.area-of-interest-geoserver-job=false"
 ```
 
 | Situação | Dica |

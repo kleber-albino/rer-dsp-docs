@@ -13,7 +13,6 @@ Conceitos, ordem de execução e pré-requisitos da migração geoespacial no RE
 - [Ordem recomendada](#ordem-recomendada)
 - [Estratégias de change detection](#estrategias-de-change-detection)
 - [Pré-requisitos](#pre-requisitos)
-- [Caminhos de ambiente](#caminhos-de-ambiente)
 - [Onde aprofundar](#onde-aprofundar)
 
 ---
@@ -29,7 +28,7 @@ O DSP pode trabalhar com uma **base PostGIS de destino** alinhada à origem (leg
 | Domínio | Jobs | Observação |
 |---------|------|------------|
 | Unidades administrativas | level-1, level-2, level-3 | Hierarquia configurável via YAML |
-| Propriedades rurais | `rural-property-geoserver-job` | Tipicamente `DATE_RANGE` |
+| Área de interesse | `area-of-interest-geoserver-job` | Tipicamente `DATE_RANGE` |
 
 O significado de cada level **não está fixo no código** — vem das tabelas e colunas configuradas no YAML. Exemplos de hierarquias possíveis:
 
@@ -46,18 +45,20 @@ O significado de cada level **não está fixo no código** — vem das tabelas e
 ```mermaid
 flowchart LR
   src[(source)] -->|read| app[dsp-batch]
-  app -->|UPSERT / DELETE| tgt[(target)]
+  app -->|bbox + centroid| tgt[(dsp-db)]
+  app -->|geometry| geo[(exhibition-db)]
   app -->|BATCH_*| meta[(batch_metadata)]
-  app -.->|layer + bboxes| gs[GeoServer]
+  geo -.->|layers WMS| gs[GeoServer Exhibition]
 ```
 
 | Componente | Responsabilidade |
 |------------|------------------|
 | Banco **source** | Fonte da verdade a ser lida |
-| Banco **target** | Base DSP atualizada pelo job |
+| Banco **dsp-db** (`target`) | Base operacional — negócio + bbox/centroid |
+| Banco **exhibition-db** (`geo-target`) | Geometria completa para GeoServer Exhibition |
 | Banco **batch_metadata** | Histórico e controle Spring Batch |
-| **dsp-batch** | Orquestra detecção, partição, UPSERT |
-| **GeoServer** | Consome destino; |
+| **dsp-batch** | Orquestra detecção, partição, dual-write UPSERT |
+| **GeoServer Exhibition** | Consome **somente** `exhibition-db` |
 
 ---
 
@@ -71,7 +72,7 @@ flowchart TD
   B -->|sem mudanças| C[SKIP — fim]
   B -->|há mudanças| D[MasterStep particionado]
   D --> E[Workers: Reader → Processor → Writer]
-  E --> F[UPSERT no target]
+  E --> F[Dual-write: dsp-db + exhibition-db]
   F --> G[GeoCacheUpdateListener]
 ```
 
@@ -82,7 +83,7 @@ flowchart TD
 | Partitioner | Fatia por `partition-column` (se numérica) |
 | Reader | Páginas com geometria em GeoJSON (`ST_AsGeoJSON`) |
 | Processor | Pass-through (sem transformação de negócio) |
-| Writer / service | UPSERT `ON CONFLICT` + `ST_GeomFromGeoJSON` |
+| Writer / service | UPSERT `ON CONFLICT` em **dois destinos**: `dsp-db` (bbox + centroid) e `exhibition-db` (geometry completa); fail-fast se um falhar |
 | Listener | Log de pedido de refresh de cache |
 
 Detalhe de configuração: [rer-dsp-job-data-migration](rer-dsp-job-data-migration.md).
@@ -95,7 +96,7 @@ Detalhe de configuração: [rer-dsp-job-data-migration](rer-dsp-job-data-migrati
 admin-unit level-1
     → admin-unit level-2
         → admin-unit level-3
-            → rural-property
+            → area-of-interest
 ```
 
 | Motivo | Detalhe |
@@ -113,18 +114,29 @@ O `JobRunner` já executa nessa ordem quando várias flags estão `true`.
 | Estratégia | Uso típico | Comportamento |
 |------------|------------|---------------|
 | `DEFAULT` | Unidades administrativas | Hash de atributos + geometria; DELETE de órfãos no target; coleta bboxes |
-| `DATE_RANGE` | Propriedades rurais | Filtra origem por `start-date` / `end-date` em `comparison-columns`; **não** faz hash nem delete de órfãos |
+| `DATE_RANGE` | Área de interesse | Filtra origem por `start-date` / `end-date` em `comparison-columns`; **não** faz hash nem delete de órfãos |
 
 ---
 
 ## Pré-requisitos
 
 - [ ] Java 21 e Maven Wrapper
-- [ ] Três datasources acessíveis (ou schemas equivalentes)
+- [ ] Quatro datasources acessíveis (source, dsp-db, exhibition-db, batch)
 - [ ] Extensão PostGIS na origem e no destino
 - [ ] Schema `BATCH_*` aplicado
 - [ ] PRIMARY KEY (ou unique) nas colunas de conflito do destino
 - [ ] YAML com `source-table`, `target-table`, mapping e `layer-name`
 - [ ] Flags `execution-jobs` coerentes com a etapa
+
+---
+
+## Onde aprofundar
+
+| Tema | Página |
+|------|--------|
+| Contrato dos bancos (4 papéis) | [Bancos de dados](../architecture/databases.md) |
+| Passo a passo do primeiro run | [Começando](../getting-started.md) |
+| YAML, datasources e comandos | [Job data-migration](rer-dsp-job-data-migration.md) |
+| Checklist e queries pós-migração | [Validação](validation.md) |
 
 ---

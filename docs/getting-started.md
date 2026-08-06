@@ -11,17 +11,17 @@ Guia de onboarding do **RER DSP**. O primeiro passo é executar a **migração i
 - [Passo 2 — Ambiente de banco](#passo-2-ambiente-de-banco)
 - [Passo 3 — Schema de metadados do Spring Batch](#passo-3-schema-de-metadados-do-spring-batch)
 - [Passo 4 — Configurar application.yaml](#passo-4-configurar-applicationyaml)
-  - [Exemplo completo](#41-exemplo-completo--level-1--2--3)
-  - [Os três bancos envolvidos](#42-os-tres-bancos-envolvidos)
+  - [Exemplo completo](#41-exemplo-completo-level-1-2-3)
+  - [Os quatro bancos envolvidos](#42-os-quatro-bancos-envolvidos)
   - [Estrutura do banco de origem](#43-estrutura-do-banco-de-origem-exemplos)
   - [Estrutura do banco de destino](#44-estrutura-do-banco-de-destino)
-  - [Diferenças origem × destino](#45-diferencas-origem--destino-level-1)
+  - [Diferenças origem × destino](#45-diferencas-origem-destino-level-1)
   - [Como cada coluna vira YAML](#46-como-cada-coluna-vira-yaml-level-1)
   - [Level 2 e Level 3](#47-level-2-e-level-3)
   - [Mapa das seções do YAML](#48-mapa-das-secoes-do-yaml)
   - [Conexões dos três bancos](#49-conexoes-dos-tres-bancos)
   - [Quais jobs rodar](#410-quais-jobs-rodar-na-subida)
-  - [Checklist coluna → YAML](#411-checklist-coluna--yaml)
+  - [Checklist coluna → YAML](#411-checklist-coluna-yaml)
 - [Passo 5 — Executar a migração inicial](#passo-5-executar-a-migracao-inicial)
 - [Passo 6 — Validar](#passo-6-validar)
 - [Próximos passos](#proximos-passos)
@@ -49,8 +49,7 @@ Ao final deste guia você terá:
 |------------|---------------------|
 | Java | **21** |
 | Maven | Wrapper `./mvnw` incluso no projeto |
-| Docker / Docker Compose | Opcional, para Postgres local |
-| PostgreSQL + PostGIS | Obrigatório (origem, destino e metadados) |
+| PostgreSQL + PostGIS | Obrigatório (origem, dsp-db, exhibition-db e metadados) |
 | Acesso Git | Clone do repositório do job |
 
 ---
@@ -61,7 +60,7 @@ Ao final deste guia você terá:
 - [ ] Repositório `rer-dsp-job-data-migration` clonado
 - [ ] Postgres/PostGIS acessível
 - [ ] Scripts de `batch_metadata` aplicados
-- [ ] `application.yaml` apontando para os três datasources
+- [ ] `application.yaml` apontando para os quatro datasources (source, target, geo-target, batch)
 - [ ] Flags `execution-jobs` configuradas (começar pelo level-1)
 - [ ] Job executado com status `COMPLETED`
 - [ ] Contagens origem × destino conferidas ([Validação](migration/validation.md))
@@ -79,7 +78,7 @@ cd rer-dsp-job-data-migration
 
 ## Passo 2 — Ambiente de banco
 
-O job usa **três datasources**: origem (`source`), destino (`target`) e metadados do Batch (`batch`). Neste passo prepare origem e destino; o schema de metadados fica no [Passo 3](#passo-3-schema-de-metadados-do-spring-batch).
+O job usa **quatro datasources**: origem (`source`), operacional (`target` → `dsp-db`), exibição (`geo-target` → `exhibition-db`) e metadados do Batch (`batch`). Neste passo prepare origem e os dois destinos; o schema de metadados fica no [Passo 3](#passo-3-schema-de-metadados-do-spring-batch).
 
 ### 1. Banco de origem (sua organização)
 
@@ -91,24 +90,33 @@ Reúna as credenciais do banco PostgreSQL/PostGIS da sua organização — é a 
 | Usuário | `postgres` |
 | Senha | `sua_senha` |
 
-### 2. Banco de destino (DSP)
+### 2. Banco operacional (`dsp-db`)
 
-Crie um banco PostgreSQL com extensão PostGIS para receber os dados migrados:
+Crie um banco PostgreSQL com PostGIS para dados de negócio + `boundary_box` + `centroid_coordinates` (sem coluna `geometry` completa):
 
 ```bash
-# Exemplo: Postgres na porta 6666
-psql -h localhost -p 6666 -U postgres -c "CREATE DATABASE dsp_target;"
-psql -h localhost -p 6666 -U postgres -d dsp_target -c "CREATE EXTENSION IF NOT EXISTS postgis;"
+psql -h localhost -p 6666 -U postgres -c "CREATE DATABASE dsp_db;"
+psql -h localhost -p 6666 -U postgres -d dsp_db -c "CREATE EXTENSION IF NOT EXISTS postgis;"
+```
+
+### 3. Banco de exibição (`exhibition-db`)
+
+Crie um segundo banco PostGIS para geometria completa (GeoServer Exhibition):
+
+```bash
+psql -h localhost -p 6666 -U postgres -c "CREATE DATABASE dsp_exhibition_db;"
+psql -h localhost -p 6666 -U postgres -d dsp_exhibition_db -c "CREATE EXTENSION IF NOT EXISTS postgis;"
 ```
 
 Conferir:
 
 ```bash
-psql -h localhost -p 6666 -U postgres -d dsp_target -c "SELECT PostGIS_Version();"
+psql -h localhost -p 6666 -U postgres -d dsp_db -c "SELECT PostGIS_Version();"
+psql -h localhost -p 6666 -U postgres -d dsp_exhibition_db -c "SELECT PostGIS_Version();"
 ```
 
 !!! tip "Mínimo necessário"
-    Ao final do Passo 3 você precisa de **pelo menos dois bancos** prontos: o de **origem** (sua organização) e o de **destino** (DSP), além do `batch_metadata` para o Spring Batch.
+    Ao final do Passo 3 você precisa de **quatro bancos** prontos: **origem**, **dsp-db**, **exhibition-db** e `batch_metadata`. Contrato: [Bancos de dados](architecture/databases.md).
 
 ---
 
@@ -151,7 +159,8 @@ Nesse passo vamos trabalhar com um exemplo (continente → país → área admin
 ```mermaid
 flowchart LR
   src[(source<br/>leitura)] --> yaml[application.yaml<br/>mapeamento]
-  yaml --> tgt[(target<br/>UPSERT)]
+  yaml --> tgt[(dsp-db<br/>bbox + centroid)]
+  yaml --> geo[(exhibition-db<br/>geometry)]
   yaml --> batch[(batch_metadata<br/>execução)]
 ```
 
@@ -240,19 +249,20 @@ Significado rápido de cada propriedade:
 | `persist-columns` | Colunas enviadas ao destino (PK + atributos + FKs) |
 | `column-mapping` | Tradução `origem: destino` quando os nomes diferem |
 | `partition-column` | Coluna numérica/categórica para fatiar a leitura |
-| `srid` | SRID das geometrias (ex.: `4326`) |
+| `srid` | SRID aplicado na escrita (por job no YAML; DDL sem typmod de SRID) |
 | `layer-name` | Nome da layer no GeoServer |
 | `change-detection-strategy` | `DEFAULT` (hash + órfãos) ou `DATE_RANGE` |
 
 ---
 
-### 4.2 Os três bancos envolvidos
+### 4.2 Os quatro bancos envolvidos
 
 | Banco | Prefixo YAML | Papel |
 |-------|--------------|--------|
 | **Origem** (`source`) | `spring.datasource.source` | Onde o job **lê** geometrias e atributos |
-| **Destino** (`target`) | `spring.datasource.target` | Onde o job **grava** (UPSERT / DELETE de órfãos) |
-| **Metadados** (`batch`) | `spring.datasource.batch` | Tabelas `BATCH_*` — status da execução (não guarda geometrias) |
+| **Operacional** (`target`) | `spring.datasource.target` | Onde o job grava negócio + bbox/centroid (`dsp-db`) |
+| **Exibição** (`geo-target`) | `spring.datasource.geo-target` | Onde o job grava `geometry` completa (`exhibition-db`) |
+| **Metadados** (`batch`) | `spring.datasource.batch` | Tabelas `BATCH_*` — status da execução |
 
 Hierarquia do exemplo:
 
@@ -317,7 +327,7 @@ target_l3_admin_division.target_country_ref
 
 ### 4.5 Diferenças origem × destino (Level 1)
 
-Use esta tabela como “dicionário” ao ler o exemplo do [4.1](#41-exemplo-completo--level-1--2--3):
+Use esta tabela como “dicionário” ao ler o exemplo do [4.1](#41-exemplo-completo-level-1-2-3):
 
 | Papel | Coluna origem | Tipo | Coluna destino | Tipo | Por que mudou o nome? |
 |-------|---------------|------|----------------|------|------------------------|
@@ -354,7 +364,7 @@ Fluxo mental: **coluna origem → `column-mapping` → coluna destino**.
 | `source_continent_geom` | `geometry-column` | `source_continent_geom` (nome **na origem**) |
 | `source_continent_geom` | `column-mapping` | `source_continent_geom: target_continent_geometry` |
 
-Isso corresponde ao bloco `batch.admin-unit.level-1` do [exemplo completo](#41-exemplo-completo--level-1--2--3).
+Isso corresponde ao bloco `batch.admin-unit.level-1` do [exemplo completo](#41-exemplo-completo-level-1-2-3).
 
 !!! tip "Como ler o mapping"
     Em `column-mapping`, a chave é **sempre o nome na origem** e o valor é **o nome no destino**. A PK do destino (`target_continent_id`) precisa existir como PRIMARY KEY — o job resolve o nome via mapping a partir de `primary-key`.
@@ -365,7 +375,7 @@ Isso corresponde ao bloco `batch.admin-unit.level-1` do [exemplo completo](#41-e
 
 O mapeamento YAML dos Levels 2 e 3 é **semelhante ao Level 1**: mesmas propriedades (`source-table`, `target-table`, `primary-key`, `geometry-column`, `comparison-columns`, `persist-columns`, `column-mapping`).
 
-A única diferença prática é a **FK do nível pai**, que também entra no `column-mapping` e em `persist-columns` / `comparison-columns` (ex.: `source_continent_fk` → `target_continent_ref`). Veja os blocos `level-2` e `level-3` no [exemplo completo](#41-exemplo-completo--level-1--2--3).
+A única diferença prática é a **FK do nível pai**, que também entra no `column-mapping` e em `persist-columns` / `comparison-columns` (ex.: `source_continent_fk` → `target_continent_ref`). Veja os blocos `level-2` e `level-3` no [exemplo completo](#41-exemplo-completo-level-1-2-3).
 
 ---
 
@@ -373,9 +383,9 @@ A única diferença prática é a **FK do nível pai**, que também entra no `co
 
 ```text
 application.yaml
-├── spring.datasource.*     → conexões (batch / source / target)
+├── spring.datasource.*     → conexões (batch / source / target / geo-target)
 ├── batch.admin-unit.*      → o que ler, comparar, mapear e gravar
-├── batch.rural-property.*  → job de propriedades (estratégia DATE_RANGE)
+├── batch.area-of-interest.*  → job de área de interesse (estratégia DATE_RANGE)
 ├── parallelization.jobs.*  → threads, chunk, page size
 ├── execution-jobs.*        → quais jobs ligar na subida
 └── server / logging        → porta e logs
@@ -383,7 +393,7 @@ application.yaml
 
 | Etapa do fluxo | O que configura | Seção YAML |
 |----------------|-----------------|------------|
-| **Conexão** | URL, usuário, senha dos 3 bancos | `spring.datasource.batch` / `.source` / `.target` |
+| **Conexão** | URL, usuário, senha dos 4 bancos | `spring.datasource.batch` / `.source` / `.target` / `.geo-target` |
 | **Consulta (leitura)** | Tabela, filtro, PK, geometria | `source-table`, `where-clause`, `primary-key`, `geometry-column` |
 | **Detecção de mudança** | Quais colunas comparar | `comparison-columns`, `change-detection-strategy` |
 | **Mapeamento** | Origem → destino (renomear) | `column-mapping` |
@@ -393,7 +403,7 @@ application.yaml
 
 ---
 
-### 4.9 Conexões dos três bancos
+### 4.9 Conexões dos quatro bancos
 
 Ajuste host, porta e nomes aos bancos que você criou nos Passos 2 e 3:
 
@@ -411,7 +421,12 @@ spring:
       password: postgres
       driver-class-name: org.postgresql.Driver
     target:
-      url: jdbc:postgresql://localhost:6666/target_geo_import_db
+      url: jdbc:postgresql://localhost:6666/dsp_db
+      username: postgres
+      password: postgres
+      driver-class-name: org.postgresql.Driver
+    geo-target:
+      url: jdbc:postgresql://localhost:6666/dsp_exhibition_db
       username: postgres
       password: postgres
       driver-class-name: org.postgresql.Driver
@@ -429,7 +444,8 @@ server:
 |---------|-------|-----|
 | `spring.datasource.batch` | `batch_metadata` | JobRepository (`BATCH_*`) |
 | `spring.datasource.source` | `source_geo_import_db` | SELECT / change detection / partição |
-| `spring.datasource.target` | `target_geo_import_db` | UPSERT / DELETE |
+| `spring.datasource.target` | `dsp_db` | UPSERT negócio + bbox/centroid |
+| `spring.datasource.geo-target` | `dsp_exhibition_db` | UPSERT geometry + bbox/centroid |
 
 ---
 
@@ -442,7 +458,7 @@ execution-jobs:
   admin-unit-level-1-geoserver-job: true
   admin-unit-level-2-geoserver-job: false
   admin-unit-level-3-geoserver-job: false
-  rural-property-geoserver-job: false
+  area-of-interest-geoserver-job: false
 ```
 
 Overrides sem editar o arquivo:
@@ -452,7 +468,7 @@ Overrides sem editar o arquivo:
 --execution-jobs.admin-unit-level-1-geoserver-job=true \
 --execution-jobs.admin-unit-level-2-geoserver-job=false \
 --execution-jobs.admin-unit-level-3-geoserver-job=false \
---execution-jobs.rural-property-geoserver-job=false"
+--execution-jobs.area-of-interest-geoserver-job=false"
 ```
 
 ---
@@ -489,7 +505,7 @@ java -jar target/dsp-batch-0.0.1-SNAPSHOT.jar
 
 - A aplicação sobe na porta **8086**
 - `spring.batch.job.enabled: false` — o Boot não auto-starta jobs; o `JobRunner` dispara conforme `execution-jobs`
-- Ordem no `JobRunner`: L1 → L2 → L3 → rural-property
+- Ordem no `JobRunner`: L1 → L2 → L3 → area-of-interest
 
 ```mermaid
 flowchart TD
@@ -502,10 +518,10 @@ flowchart TD
   l2 -->|não| l3
   job2 --> l3{L3 true?}
   l3 -->|sim| job3[adminUnitLevel3GeoserverJob]
-  l3 -->|não| rp
-  job3 --> rp{rural true?}
-  rp -->|sim| job4[ruralPropertyGeoserverJob]
-  rp -->|não| fim[Fim]
+  l3 -->|não| aoi
+  job3 --> aoi{AOI true?}
+  aoi -->|sim| job4[areaOfInterestGeoserverJob]
+  aoi -->|não| fim[Fim]
   job4 --> fim
 ```
 
@@ -514,8 +530,8 @@ flowchart TD
 ## Passo 6 — Validar
 
 1. Status no banco de metadados (`COMPLETED`)
-2. Contagens origem × destino
-3. Amostra de geometrias válidas
+2. Contagens origem × **exhibition-db** e presença de bbox/centroid em **dsp-db**
+3. Amostra de geometrias válidas e SRID conforme YAML em ambos os destinos
 
 Comandos e checklist: [Validação](migration/validation.md).
 
