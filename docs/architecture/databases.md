@@ -33,6 +33,7 @@ flowchart LR
   job -->|geometry| ex
   job -->|BATCH_*| batch
   api -->|read| dsp
+  api -->|WFS downloads| gs
   gs -->|read| ex
 ```
 
@@ -71,7 +72,7 @@ O writer do job deriva `boundary_box` e `centroid_coordinates` a partir da geome
 | `rer-dsp-job-data-migration` | leitura | escrita (bbox/centroid) | escrita (geometry) | escrita (`BATCH_*`) |
 | `rer-dsp-backend` / `rer-dsp-core` | — | leitura/escrita de negócio | — | — |
 | GeoServer Exhibition | — | — | leitura | — |
-| GeoServer Download | — | conforme instalação | — | — |
+| GeoServer WFS (downloads) | — | — | — | leitura via HTTP pelo backend |
 
 O GeoServer Exhibition aponta **somente** para `dsp-geoserver-exhibition-db`.
 

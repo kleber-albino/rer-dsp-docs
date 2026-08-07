@@ -150,4 +150,28 @@ Veja também: [Instalação completa](../guides/full-installation.md), [Bancos d
 
 ## Estrutura de configuração gerada
 
-`config/adopter/adopter-config.yaml` é o arquivo central produzido pelo wizard `./config.sh`. A partir dele são derivados os arquivos operacionais consumidos por backend (`installationConfig.json`, `mapLayersConfig.json`) e pelo job de migração (`application.yaml`), evitando que cada módulo precise ser configurado manualmente e de forma isolada.
+`config/adopter/adopter-config.yaml` é o arquivo central produzido pelo wizard `./config.sh`. A partir dele são derivados os arquivos operacionais consumidos por backend (`installationConfig.json`, `mapLayersConfig.json`, `downloadThemesConfig.json`) e pelo job de migração (`application.yaml`), evitando que cada módulo precise ser configurado manualmente e de forma isolada.
+
+O wizard `./config.sh` produz um único `adopter-config.yaml` e, a partir dele, deriva todos os artefatos operacionais consumidos pelos demais módulos. O `downloadThemesConfig.json` entra nesse pipeline como catálogo de temas para a tela de Downloads e para o proxy WFS do backend.
+
+```mermaid
+flowchart LR
+  configSh["./config.sh"] --> apply["apply_adopter_config.py"]
+  apply --> installJson["installation-config.json"]
+  apply --> mapJson["mapLayersConfig.json"]
+  apply --> downloadJson["downloadThemesConfig.json"]
+  apply --> appYaml["application.yaml"]
+  downloadJson --> backendVol["volume dsp-backend"]
+  mapJson --> geoserverVol["volume GeoServer"]
+```
+
+- **`./config.sh`** — ponto de entrada do adotante; reaplica, edita ou recria o `adopter-config.yaml` e dispara a geração dos JSON/YAML.
+- **`apply_adopter_config.py`** — traduz o YAML do adotante para os formatos consumidos por backend, frontend (via API), job de migração e GeoServer.
+- **`installation-config.json`** — labels, hierarquia, telas e KPIs (`DSP_INSTALLATION_CONFIG_FILE` no backend).
+- **`mapLayersConfig.json`** — grupos e camadas WMS do mapa (`DSP_MAP_LAYERS_FILE`); publicadas no GeoServer pelo `populate_geoserver.sh`.
+- **`downloadThemesConfig.json`** — catálogo de temas de download derivado de `area_of_interest` + `etl.layers[]` (`DSP_DOWNLOAD_THEMES_FILE` no backend); alinhado às mesmas camadas publicadas no GeoServer.
+- **`application.yaml`** — plano de migração ETL (tabelas, colunas, camadas genéricas).
+- **Volume `dsp-backend`** — monta `installation-config.json`, `mapLayersConfig.json` e `downloadThemesConfig.json` no container da API.
+- **Volume GeoServer** — monta `mapLayersConfig.json` para publicação WMS/WFS a partir do `exhibition-db`.
+
+Veja também: [Fluxo de dados](../architecture/data-flow.md) (runtime) e [rer-dsp-backend](backend.md) (variáveis de ambiente de downloads).

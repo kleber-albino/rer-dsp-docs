@@ -156,8 +156,8 @@ flowchart LR
 
 1. **Ingestão / sync** — job de migração faz dual-write: `dsp-db` (negócio + bbox/centroid) e `exhibition-db` (geometria completa).
 2. **Publicação** — GeoServer lê **somente** `exhibition-db`.
-3. **Consumo via API** — backend lê `dsp-db` (sem polígonos completos).
-4. **Consumo via UI** — frontend consome a API do backend e o WMS do GeoServer diretamente para os mapas.
+3. **Consumo via API** — backend lê `dsp-db` (sem polígonos completos) e consulta GeoServer via WFS para downloads de arquivo.
+4. **Consumo via UI** — frontend consome a API do backend (busca, KPIs, downloads) e, para mapas, consome WMS/WFS do GeoServer diretamente.
 
 !!! tip "Porque não gravar a geometria completa no `dsp-db`?"
     Em vez de guardar a geometria completa (o polígono inteiro, com todos os seus vértices) no `dsp-db`, o job grava apenas duas versões simplificadas dela:

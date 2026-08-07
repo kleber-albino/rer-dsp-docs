@@ -10,7 +10,8 @@
 Para rodar o backend fora do Docker Compose do core, você precisa:
 
 - Um PostgreSQL/PostGIS acessível com o **schema `dsp`** já criado (normalmente provido pelo SQL de inicialização do core).
-- Os arquivos externos de configuração apontados por `DSP_INSTALLATION_CONFIG_FILE` (config de instalação: hierarquia, telas, KPIs) e `DSP_MAP_LAYERS_FILE` (camadas de mapa) — normalmente gerados pelo `./config.sh` do core.
+- Os arquivos externos de configuração apontados por `DSP_INSTALLATION_CONFIG_FILE` (config de instalação: hierarquia, telas, KPIs), `DSP_MAP_LAYERS_FILE` (camadas de mapa) e `DSP_DOWNLOAD_THEMES_FILE` (temas de download) — normalmente gerados pelo `./config.sh` do core.
+- Rede acessível até o **GeoServer** (`DSP_GEOSERVER_WFS_BASE_URL`) para que busca e download de arquivos via WFS funcionem.
 - Variáveis `SPRING_DATASOURCE_URL/USERNAME/PASSWORD` apontando para esse banco, e `SPRING_JPA_HIBERNATE_DDL_AUTO=none` (o backend não gerencia o schema).
 
 Detalhes completos: [rer-dsp-backend](../modules/backend.md).
@@ -20,7 +21,7 @@ Detalhes completos: [rer-dsp-backend](../modules/backend.md).
 O frontend é o módulo mais simples de rodar isoladamente: ele só precisa saber a URL de um backend já em execução.
 
 - Defina `VITE_DSP_API_URL` no build, **ou** aponte em runtime via `public/config/env.json` (campo `urlBackend`) — útil quando a imagem já foi construída e você não quer rebuildar.
-- Não há dependência direta de banco de dados ou GeoServer no frontend; tudo é consumido via API do backend e WMS do GeoServer configurado nas camadas de mapa.
+- Não há dependência direta de banco de dados no frontend; mapas consomem GeoServer (WMS/WFS) e downloads consomem apenas a API do backend.
 
 Detalhes completos: [rer-dsp-frontend](../modules/frontend.md).
 

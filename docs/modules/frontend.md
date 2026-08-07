@@ -68,8 +68,8 @@ Endpoints consumidos pelo frontend:
 |----------|-----|
 | `GET /config/installation` | Labels, hierarquia, telas, KPIs |
 | `GET /downloads/themes` | Temas de download |
-| `POST /downloads/` (busca) | Busca de itens por hierarquia/tema |
-| `GET /downloads/file` | Download de arquivo |
+| `POST /downloads/search` | Busca de itens por hierarquia/tema |
+| `GET /downloads/file` | Download de arquivo CSV via backend |
 | `GET /map/getBaseMaps` | Mapas base |
 | `GET /map/getLayers` | Camadas de mapa |
 | `GET /geoServices/getRegions` | Regiões |
@@ -77,8 +77,8 @@ Endpoints consumidos pelo frontend:
 
 ## Integração com os demais módulos
 
-- Depende do **backend** para todos os dados de negócio — sem um backend acessível, a maior parte da UI não funciona.
-- Consome o **GeoServer** diretamente via WMS/WFS para desenhar os mapas, usando as URLs de camadas retornadas pelo backend.
+- Depende do **backend** para todos os dados de negócio e para downloads de arquivo — sem um backend acessível, a maior parte da UI não funciona.
+- Consome o **GeoServer** diretamente via WMS/WFS apenas para mapas e geometria de AOI, usando as URLs de camadas retornadas pelo backend.
 - Não tem dependência direta de banco de dados.
 
 Veja também: [Dependências entre módulos](../architecture/dependencies.md), [Fluxo de dados](../architecture/data-flow.md).

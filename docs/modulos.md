@@ -38,7 +38,8 @@ flowchart LR
   exdb --> gs
   dspdb --> be
   be -->|REST| fe
-  gs -->|WMS| fe
+  gs -->|WFS downloads| be
+  gs -->|WMS/WFS mapa| fe
 ```
 
 ## Preciso executar todos os módulos?

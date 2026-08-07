@@ -11,6 +11,7 @@ O `rer-dsp-backend` é a API REST do DSP: expõe dados de negócio, hierarquia t
 - Servir dados de negócio a partir do banco operacional (`dsp-db`) — nunca geometria completa.
 - Expor configuração de instalação (labels, hierarquia, telas, KPIs) via arquivo externo, sem precisar alterar código.
 - Expor configuração de camadas de mapa (base maps e layers) consumida pelo componente de mapa do frontend.
+- Fazer proxy WFS ao GeoServer para busca e download de arquivos CSV na tela de Downloads.
 
 ## Stack
 
@@ -41,6 +42,8 @@ Definidas com valores default em `src/main/resources/application.properties`.
 | `DSP_CORS_ALLOWED_ORIGINS` | Origens permitidas no CORS |
 | `DSP_INSTALLATION_CONFIG_FILE` | Caminho do JSON de configuração de instalação |
 | `DSP_MAP_LAYERS_FILE` | Caminho do JSON de camadas de mapa |
+| `DSP_DOWNLOAD_THEMES_FILE` | Caminho do JSON de temas de download (`downloadThemesConfig.json`) |
+| `DSP_GEOSERVER_WFS_BASE_URL` | URL base WFS do GeoServer para exportação de downloads |
 | `SPRING_DATASOURCE_URL` / `SPRING_DATASOURCE_USERNAME` / `SPRING_DATASOURCE_PASSWORD` | Conexão com `dsp-db` |
 | `SPRING_JPA_HIBERNATE_DDL_AUTO` | Gestão de schema (manter `none`) |
 
@@ -53,9 +56,9 @@ Definidas com valores default em `src/main/resources/application.properties`.
 | `GET /state/getAll` | Lista de estados |
 | `GET /state/getCitiesByUf/{idState}` | Cidades por estado |
 | `GET /state/getUfsByRegion/{region}` | Estados por região |
-| `GET /downloads/themes` | Temas disponíveis para download |
-| `POST /downloads/` | Busca itens por hierarquia/tema |
-| `GET /downloads/file` | Download de arquivo |
+| `GET /downloads/themes` | Temas disponíveis para download (catálogo em `downloadThemesConfig.json`) |
+| `POST /downloads/search` | Busca itens por hierarquia/tema (nível 2 obrigatório, nível 3 opcional) |
+| `GET /downloads/file` | Download de arquivo CSV via proxy WFS |
 | `GET /map/getBaseMaps` | Mapas base configurados |
 | `GET /map/getLayers` | Camadas de mapa (via `DSP_MAP_LAYERS_FILE`) |
 | `POST /totalizer/` | Totalizadores |
@@ -119,12 +122,22 @@ Estrutura do JSON:
 
 Entre frontend e backend, datas trafegam sempre em `yyyy-MM-dd` (só dia) ou `yyyy-MM-dd'T'HH:mm:ss` (dia + hora); a UI converte para `formats.date`/`formats.dateTime` na exibição.
 
-O que **não** entra neste arquivo: unidades territoriais (tabelas `dsp.territory_level_*` + job de migração), camadas WMS/GeoServer (`GET /map/getBaseMaps` e `GET /map/getLayers`), e o mapeamento origem→destino do ETL (`application.yaml` do job de migração).
+O que **não** entra neste arquivo: unidades territoriais (tabelas `dsp.territory_level_*` + job de migração), camadas WMS/GeoServer (`GET /map/getBaseMaps` e `GET /map/getLayers`), catálogo de downloads (`downloadThemesConfig.json`) e o mapeamento origem→destino do ETL (`application.yaml` do job de migração).
+
+## Downloads (GeoServer WFS)
+
+O catálogo de temas de download vem de `downloadThemesConfig.json`, gerado pelo `./config.sh` do core a partir de `area_of_interest` e `etl.layers[]`. O backend:
+
+1. Valida território (nível 2 obrigatório, nível 3 opcional) no `dsp-db`.
+2. Monta filtro CQL por tema.
+3. Consulta o GeoServer via WFS (`GetFeature` com `resultType=hits` na busca; `outputFormat=csv` no download).
+4. Devolve status ou bytes CSV ao frontend — o browser não acessa o GeoServer para arquivos de download.
 
 ## Integração com os demais módulos
 
 - Depende do **core** para o schema `dsp` no Postgres e para os arquivos externos `installationConfig.json` e `mapLayersConfig.json`.
 - É consumido pelo **frontend** via API REST (`VITE_DSP_API_URL`).
 - Lê exclusivamente o banco **dsp-db** — nunca acessa `exhibition-db` diretamente.
+- Consulta o **GeoServer** via HTTP/WFS para downloads de arquivo.
 
 Veja também: [Bancos de dados](../architecture/databases.md), [Dependências entre módulos](../architecture/dependencies.md).
