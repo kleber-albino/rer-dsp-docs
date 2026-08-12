@@ -52,7 +52,7 @@ O `.env` referencia os caminhos dos módulos irmãos (`DSP_BACKEND_PATH`, `DSP_F
 
 Escolha a **opção 1** no menu: demo com seed sintético do Brasil, sem precisar de banco externo. Essa opção prepara os três bancos (dsp-db, dsp-geoserver-exhibition-db, dsp-job-migration-db) e popula os dados de demonstração.
 
-Esse passo cria os containers Docker, sobe os bancos(dsp-db, dsp-geoserver-exhibition-db) e o GeoServer, e executa o job de migração para popular os bancos com os dados de demonstração.
+Esse passo cria os containers Docker, sobe os bancos (dsp-db, dsp-geoserver-exhibition-db) e os GeoServers (Exhibition + Download), e executa o job de migração para popular os bancos com os dados de demonstração.
 
 ## Passo 4 — Subir os demais componentes
 
@@ -74,7 +74,8 @@ Com todos os componentes no ar, acesse o frontend para ver a demo funcionando:
 |---------|-----|
 | Frontend | http://localhost:22667/dsp/ |
 | Backend API (Swagger UI) | http://localhost:22666/dsp-backend/swagger-ui.html |
-| GeoServer | http://localhost:22668/geoserver/web/ |
+| GeoServer Exhibition | http://localhost:22668/geoserver/web/ |
+| GeoServer Download | http://localhost:22669/geoserver/web/ |
 
 ## Próximos passos
 

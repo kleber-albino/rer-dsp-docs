@@ -26,20 +26,21 @@ flowchart LR
   app -->|"bbox + centroid"| tgt[(dsp-db)]
   app -->|geometry| geo[(exhibition-db)]
   app -->|"BATCH_*"| meta[(batch_metadata)]
-  geo -.->|layers WMS| gs[GeoServer]
+  geo -.->|layers WMS/WFS| gsEx[GeoServer Exhibition]
+  geo -.->|layers WFS downloads| gsDl[GeoServer Download]
 ```
 
 | Componente | Responsabilidade |
 |------------|------------------|
 | Fonte (`source`) | Banco JDBC do adotante — fonte da verdade a ser lida |
 | `dsp-db` (`target`) | Base operacional — negócio + bbox/centroid |
-| `exhibition-db` (`geo-target`) | Geometria completa para GeoServer |
+| `exhibition-db` (`geo-target`) | Geometria completa para os GeoServers |
 | `batch_metadata` (`batch`) | Histórico e controle Spring Batch |
 | `dsp-batch` | Orquestra detecção, partição, dual-write UPSERT |
-| GeoServer | Consome **somente** `exhibition-db` |
+| GeoServer Exhibition / Download | Consomem **somente** `exhibition-db` |
 
 !!! tip "Publicação de camadas"
-    Este job **não** publica camadas WMS no GeoServer — isso é feito pelo `rer-dsp-core` via `./setup.sh`/`populate_geoserver.sh` a partir do `mapLayersConfig.json`. O `layer-name` no YAML do job só precisa estar alinhado ao nome usado nessa publicação.
+    Este job **não** publica camadas nos GeoServers — isso é feito pelo `rer-dsp-core` via `./setup.sh`/`populate_geoserver.sh` (Exhibition e Download) a partir do `mapLayersConfig.json`. O `layer-name` no YAML do job só precisa estar alinhado ao nome usado nessa publicação.
 
 ## Pipeline de um job
 

@@ -39,11 +39,13 @@ flowchart LR
   src[(Fonte JDBC<br/>do adotante)]
   dspdb[(dsp-db)]
   exdb[(exhibition-db)]
-  gs[GeoServer]
+  gsEx[GeoServer Exhibition]
+  gsDl[GeoServer Download]
 
   core -->|"sobe/configura"| dspdb
   core -->|"sobe/configura"| exdb
-  core -->|"sobe"| gs
+  core -->|"sobe"| gsEx
+  core -->|"sobe"| gsDl
   core -->|"orquestra build/config"| job
   core -->|"orquestra build/config"| be
   core -->|"orquestra build/config"| fe
@@ -51,10 +53,12 @@ flowchart LR
   src --> job
   job -->|"negócio + bbox/centroid"| dspdb
   job -->|"geometria completa"| exdb
-  exdb --> gs
+  exdb --> gsEx
+  exdb --> gsDl
   dspdb --> be
   be -->|REST| fe
-  gs -->|WMS| fe
+  be -->|WFS downloads| gsDl
+  gsEx -->|WMS| fe
 
   classDef coreCls fill:#312e8122,color:#312e81,stroke:#4338ca,stroke-width:2px
   class core coreCls
@@ -117,11 +121,11 @@ flowchart TB
 
 | Camada | Componentes | Responsabilidade                                                                      |
 |--------|-------------|---------------------------------------------------------------------------------------|
-| Orquestração / configuração | [rer-dsp-core](https://github.com/Rural-Environmental-Registry/rer-dsp-core) | Sobe bancos, GeoServer e orquestra build/config dos demais módulos via Docker Compose |
+| Orquestração / configuração | [rer-dsp-core](https://github.com/Rural-Environmental-Registry/rer-dsp-core) | Sobe bancos, GeoServers e orquestra build/config dos demais módulos via Docker Compose |
 | Apresentação | [rer-dsp-frontend](https://github.com/Rural-Environmental-Registry/rer-dsp-frontend) | Interface web/mapas para consulta e compartilhamento                                  |
 | API | [rer-dsp-backend](https://github.com/Rural-Environmental-Registry/rer-dsp-backend) | Contratos REST, dados de negócio da plataforma                                        |
 | Integração / ETL | [rer-dsp-job-data-migration](https://github.com/Rural-Environmental-Registry/rer-dsp-job-data-migration) | Sincroniza atributos e geometria da fonte do adotante para os bancos do DSP           |
-| Publicação geo | GeoServer | Layers WMS/WFS a partir do banco de exibição                                          |
+| Publicação geo | GeoServer Exhibition + GeoServer Download | Exhibition: WMS/WFS de mapa; Download: WFS de exportação (mesmo exhibition-db) |
 | Persistência | PostgreSQL / PostGIS (3 bancos) | Dados operacionais, geometrias e metadados de execução                                |
 | Documentação | [rer-dsp-docs](https://github.com/Rural-Environmental-Registry/rer-dsp-docs) (esta wiki) | Onboarding e padrões transversais de todos os repositórios                            |
 
@@ -131,7 +135,7 @@ flowchart TB
 
 O `rer-dsp-core` não contém código de aplicação/domínio — sua responsabilidade é exclusivamente de **orquestração e configuração**:
 
-- Sobe os 3 bancos Postgres/PostGIS (dsp-db, dsp-geoserver-exhibition-db, dsp-job-migration-db) e o GeoServer via Docker Compose.
+- Sobe os 3 bancos Postgres/PostGIS (dsp-db, dsp-geoserver-exhibition-db, dsp-job-migration-db) e os dois GeoServers (Exhibition + Download) via Docker Compose.
 - Gera, a partir do wizard `./config.sh`, o `adopter-config.yaml` e os arquivos operacionais consumidos pelo backend (`installationConfig.json`, `mapLayersConfig.json`) e pelo job de migração (`application.yaml`).
 - Orquestra o build e a subida do backend, frontend e job de migração.
 - Não tem dependência de runtime sobre os demais módulos — precisa deles apenas no momento do build/orquestração.
@@ -148,16 +152,18 @@ flowchart LR
   B -->|2a. bbox + centroid| C[(dsp-db)]
   B -->|2b. geometry| E[(exhibition-db)]
   B -->|3. Metadados| D[(batch_metadata)]
-  E -->|4. Publica| G[GeoServer]
+  E -->|4a. Publica mapa| GEx[GeoServer Exhibition]
+  E -->|4b. Publica downloads| GDl[GeoServer Download]
   C -->|5. Consome| F[backend]
   F -->|6. REST| H[frontend]
-  G -->|7. WMS| H
+  F -->|WFS downloads| GDl
+  GEx -->|7. WMS| H
 ```
 
 1. **Ingestão / sync** — job de migração faz dual-write: `dsp-db` (negócio + bbox/centroid) e `exhibition-db` (geometria completa).
-2. **Publicação** — GeoServer lê **somente** `exhibition-db`.
-3. **Consumo via API** — backend lê `dsp-db` (sem polígonos completos) e consulta GeoServer via WFS para downloads de arquivo.
-4. **Consumo via UI** — frontend consome a API do backend (busca, KPIs, downloads) e, para mapas, consome WMS/WFS do GeoServer diretamente.
+2. **Publicação** — GeoServer Exhibition e GeoServer Download leem **somente** `exhibition-db` (processos isolados).
+3. **Consumo via API** — backend lê `dsp-db` (sem polígonos completos) e consulta o **GeoServer Download** via WFS para downloads de arquivo.
+4. **Consumo via UI** — frontend consome a API do backend (busca, KPIs, downloads) e, para mapas, consome WMS/WFS do **GeoServer Exhibition** diretamente.
 
 !!! tip "Porque não gravar a geometria completa no `dsp-db`?"
     Em vez de guardar a geometria completa (o polígono inteiro, com todos os seus vértices) no `dsp-db`, o job grava apenas duas versões simplificadas dela:

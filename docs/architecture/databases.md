@@ -16,7 +16,9 @@ Contrato dos **quatro papéis** de datasource no fluxo de migração e consumo d
 
 ## Visão geral
 
-A geometria completa fica isolada no banco de **exibição** (GeoServer Exhibition). O banco **operacional** (`dsp-db`) guarda atributos de negócio e representações leves (`boundary_box`, `centroid_coordinates`) para consultas da API — sem polígonos completos.
+A geometria completa fica isolada no banco de **exibição** (`dsp-geoserver-exhibition-db`). O banco **operacional** (`dsp-db`) guarda atributos de negócio e representações leves (`boundary_box`, `centroid_coordinates`) para consultas da API — sem polígonos completos.
+
+Dois GeoServers leem esse mesmo exhibition-db: **Exhibition** (mapa) e **Download** (WFS de exportação via backend).
 
 ```mermaid
 flowchart LR
@@ -25,16 +27,18 @@ flowchart LR
   dsp[(dsp-db<br/>operacional)]
   ex[(dsp-geoserver-exhibition-db<br/>geometria completa)]
   batch[(batch_metadata)]
-  api[backend / core]
-  gs[GeoServer Exhibition]
+  api[backend]
+  gsEx[GeoServer Exhibition]
+  gsDl[GeoServer Download]
 
   src -->|read| job
   job -->|bbox + centroid| dsp
   job -->|geometry| ex
   job -->|BATCH_*| batch
   api -->|read| dsp
-  api -->|WFS downloads| gs
-  gs -->|read| ex
+  api -->|WFS downloads| gsDl
+  gsEx -->|read| ex
+  gsDl -->|read| ex
 ```
 
 ---
@@ -71,10 +75,10 @@ O writer do job deriva `boundary_box` e `centroid_coordinates` a partir da geome
 |------------|--------|--------|---------------|-------|
 | `rer-dsp-job-data-migration` | leitura | escrita (bbox/centroid) | escrita (geometry) | escrita (`BATCH_*`) |
 | `rer-dsp-backend` / `rer-dsp-core` | — | leitura/escrita de negócio | — | — |
-| GeoServer Exhibition | — | — | leitura | — |
-| GeoServer WFS (downloads) | — | — | — | leitura via HTTP pelo backend |
+| GeoServer Exhibition | — | — | leitura (WMS/WFS mapa) | — |
+| GeoServer Download | — | — | leitura (WFS downloads via backend) | — |
 
-O GeoServer Exhibition aponta **somente** para `dsp-geoserver-exhibition-db`.
+Os dois GeoServers apontam **somente** para `dsp-geoserver-exhibition-db` (mesmo PostGIS; processos isolados).
 
 ---
 

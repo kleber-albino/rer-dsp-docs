@@ -23,11 +23,13 @@ flowchart LR
   src[(Fonte JDBC<br/>do adotante)]
   dspdb[(dsp-db)]
   exdb[(exhibition-db)]
-  gs[GeoServer]
+  gsEx[GeoServer Exhibition]
+  gsDl[GeoServer Download]
 
   core -->|sobe e configura| dspdb
   core -->|sobe e configura| exdb
-  core -->|sobe| gs
+  core -->|sobe| gsEx
+  core -->|sobe| gsDl
   core -->|orquestra build| job
   core -->|orquestra build| be
   core -->|orquestra build| fe
@@ -35,11 +37,12 @@ flowchart LR
   src --> job
   job -->|negócio + bbox/centroid| dspdb
   job -->|geometria completa| exdb
-  exdb --> gs
+  exdb --> gsEx
+  exdb --> gsDl
   dspdb --> be
   be -->|REST| fe
-  gs -->|WFS downloads| be
-  gs -->|WMS/WFS mapa| fe
+  be -->|WFS downloads| gsDl
+  gsEx -->|WMS/WFS mapa| fe
 ```
 
 ## Preciso executar todos os módulos?
@@ -58,8 +61,8 @@ A arquitetura do DSP foi projetada para que módulos funcionem em conjunto. Util
 
 | Cenário | Módulos necessários | Riscos e limitações |
 |---------|----------------------|---------------------|
-| Só publicar mapas (WMS) | core (bancos + GeoServer) + job-data-migration | Não haverá API REST nem interface web para gerenciamento e consulta. |
-| Só expor a API REST | core (bancos) + backend | Sem GeoServer, recursos como WMS/WFS e publicação de mapas não estarão disponíveis. |
+| Só publicar mapas (WMS) | core (bancos + GeoServer Exhibition) + job-data-migration | Não haverá API REST nem interface web para gerenciamento e consulta. |
+| Só expor a API REST | core (bancos) + backend | Sem GeoServer Exhibition, mapas WMS/WFS não estarão disponíveis; sem GeoServer Download, `/downloads/*` via WFS não funciona. |
 | Aplicação própria consumindo dados | core + job-data-migration + backend | Você será responsável por desenvolver e manter toda a interface da aplicação e suas integrações. |
 | Stack completa (recomendado) | Todos os 5 módulos | Arquitetura oficialmente suportada e documentada em [Começando rápido](getting-started.md). |
 

@@ -10,7 +10,7 @@ O `rer-dsp-frontend` é a interface web do DSP: busca por hierarquia territorial
 
 - Renderizar a Home com busca/hierarquia territorial, KPIs e mapa.
 - Consumir a API do backend para dados de negócio e configuração.
-- Consumir GeoServer (WMS/WFS) diretamente para exibição de camadas no mapa.
+- Consumir GeoServer Exhibition (WMS/WFS) diretamente para exibição de camadas no mapa.
 
 ## Stack
 
@@ -58,7 +58,7 @@ O mapa da Home usa o pacote compartilhado [`@rural-environmental-registry/map_co
 | Papel no DSP | Exibição WMS + menu de temas/sub-camadas com toggle |
 | Fonte das camadas | Somente a API do backend (`GET /map/getBaseMaps`, `GET /map/getLayers`) — sem fallback local; falha de configuração fica visível na UI |
 
-O componente de mapa consome `/map/getBaseMaps` e `/map/getLayers` e integra o GeoServer (WMS/WFS) via o pacote `map_component`. A orquestração de negócio (filtros, clique no mapa → detalhe do imóvel) fica no frontend do DSP, não no pacote em si.
+O componente de mapa consome `/map/getBaseMaps` e `/map/getLayers` e integra o GeoServer Exhibition (WMS/WFS) via o pacote `map_component`. A orquestração de negócio (filtros, clique no mapa → detalhe do imóvel) fica no frontend do DSP, não no pacote em si.
 
 ## Integração com o backend
 
@@ -78,7 +78,7 @@ Endpoints consumidos pelo frontend:
 ## Integração com os demais módulos
 
 - Depende do **backend** para todos os dados de negócio e para downloads de arquivo — sem um backend acessível, a maior parte da UI não funciona.
-- Consome o **GeoServer** diretamente via WMS/WFS apenas para mapas e geometria de AOI, usando as URLs de camadas retornadas pelo backend.
+- Consome o **GeoServer Exhibition** diretamente via WMS/WFS apenas para mapas e geometria de AOI, usando as URLs de camadas retornadas pelo backend.
 - Não tem dependência direta de banco de dados.
 
 Veja também: [Dependências entre módulos](../architecture/dependencies.md), [Fluxo de dados](../architecture/data-flow.md).

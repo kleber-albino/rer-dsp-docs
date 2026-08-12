@@ -27,7 +27,8 @@ flowchart LR
   be["DSP BACKEND<br/>API REST e regras de negócio."]
   fe["DSP FRONTEND<br/>Interface web da plataforma.<br/>Consulta, mapas e compartilhamento."]
 
-  gsEx["GEOSERVER-EXHIBITION<br/>Publica layers para visualização.<br/>Serviço WMS."]
+  gsEx["GEOSERVER-EXHIBITION<br/>Publica layers para visualização.<br/>Serviço WMS/WFS de mapa."]
+  gsDl["GEOSERVER-DOWNLOAD<br/>WFS para exportação de downloads.<br/>Consumido pelo backend."]
 
   srcDb --> jobMig
   jobMig -->|"negócio + bbox/centroid"| dspDb
@@ -38,11 +39,14 @@ flowchart LR
   core -.-> be
   core -.-> fe
   core -.-> gsEx
+  core -.-> gsDl
 
   dspDb --> be
   gsDb --> gsEx
+  gsDb --> gsDl
 
   be --> fe
+  be -->|WFS downloads| gsDl
   gsEx -->|WMS| fe
 
   classDef app fill:#0f766e22,color:#115e59,stroke:#0f766e,stroke-width:2px
@@ -52,14 +56,14 @@ flowchart LR
   classDef coreCls fill:#312e8122,color:#312e81,stroke:#4338ca,stroke-width:2px
 
   class fe,be app
-  class gsEx geoCls
+  class gsEx,gsDl geoCls
   class dspDb,gsDb,srcDb db
   class jobMig job
   class core coreCls
 ```
 
 !!! tip "Por onde começar"
-    O `rer-dsp-core` é o ponto de entrada operacional: ele sobe os bancos, o GeoServer e orquestra os demais módulos via Docker Compose.
+    O `rer-dsp-core` é o ponto de entrada operacional: ele sobe os bancos, os GeoServers (Exhibition + Download) e orquestra os demais módulos via Docker Compose.
 
 ## Por onde começar
 

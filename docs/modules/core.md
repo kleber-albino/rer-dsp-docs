@@ -12,7 +12,7 @@ flowchart TD
   be["rer-dsp-backend"]
   fe["rer-dsp-frontend"]
   job["rer-dsp-job-data-migration"]
-  gs["GeoServer + 3 bancos Postgres/PostGIS"]
+  gs["2 GeoServers + 3 bancos Postgres/PostGIS"]
 
   core --> be
   core --> fe
@@ -24,7 +24,7 @@ flowchart TD
 
 - Configuração de exemplo do adotante.
 - SQL de inicialização dos bancos.
-- GeoServer Exhibition.
+- GeoServer Exhibition (mapa) e GeoServer Download (WFS de exportação).
 - Três scripts operacionais: `./config.sh`, `./setup.sh`, `./start.sh`.
 
 ## Pré-requisitos
@@ -91,7 +91,7 @@ Ao escolher a **opção 2**, o script pergunta ainda o modo de execução da mig
 
 Se a **opção 2** for escolhida mas `config/Job-Data-Migration/application/application.yaml` ainda for idêntico ao template de exemplo (`.example`), o `setup.sh` interrompe com erro, pedindo para rodar `./config.sh` (ou editar o arquivo manualmente) antes de tentar novamente.
 
-Ao final de qualquer opção real (2 ou 3), o script também publica as camadas no GeoServer Exhibition a partir da configuração de mapa.
+Ao final de qualquer opção real (2 ou 3), o script também publica as camadas no GeoServer Exhibition e no GeoServer Download a partir da configuração de mapa.
 
 ### `./start.sh`
 
@@ -100,7 +100,7 @@ Ao final de qualquer opção real (2 ou 3), o script também publica as camadas 
 1. Verifica os repositórios irmãos `rer-dsp-backend` e `rer-dsp-frontend` (paths via `DSP_BACKEND_PATH`/`DSP_FRONTEND_PATH`, default `../rer-dsp-backend` e `../rer-dsp-frontend`).
 2. Garante a configuração de instalação (`installationConfig.json`) e de camadas de mapa.
 3. Sobe os bancos (sem migração) e, se `DSP_MIGRATION_EXECUTION_MODE=continuous`, mantém também a stack de migração ativa.
-4. Sobe o GeoServer Exhibition e builda/sobe os containers `dsp-backend` e `dsp-frontend`.
+4. Garante o GeoServer Exhibition e o GeoServer Download no ar (sem rebuild forçado nem republicação de camadas — isso fica no `./setup.sh`) e builda/sobe os containers `dsp-backend` e `dsp-frontend`.
 5. Imprime um resumo da stack e as URLs de cada serviço.
 
 ## Bancos e GeoServer
@@ -110,7 +110,8 @@ Ao final de qualquer opção real (2 ou 3), o script também publica as camadas 
 | dsp-db | 20654 | Banco operacional — negócio + bbox/centroid |
 | Job migration DB (dsp-job-migration-db) | 20655 | Metadados Spring Batch (`BATCH_*`) |
 | GeoServer Exhibition DB (dsp-geoserver-exhibition-db) | 20656 | Geometria completa `dsp.*` |
-| GeoServer | 22668 | Publicação WMS a partir do exhibition-db |
+| GeoServer Exhibition | 22668 | WMS/WFS de mapa a partir do exhibition-db |
+| GeoServer Download | 22669 | WFS de downloads (consumido pelo backend) |
 
 ## Fluxo dual-write
 
@@ -119,9 +120,11 @@ flowchart LR
   src[(Fonte JDBC do adotante)] --> job[Job de migração]
   job -->|"negócio + bbox/centroid"| dspdb[(dsp-db)]
   job -->|"geometria completa"| exdb[(dsp-geoserver-exhibition-db)]
-  exdb --> gs[GeoServer publica WMS]
+  exdb --> gsEx[GeoServer Exhibition WMS]
+  exdb <--> gsDl[GeoServer Download WFS]
   dspdb --> be[Backend serve API]
   be --> fe[Frontend consome API + WMS]
+  be -->|WFS downloads| gsDl
 ```
 
 ## URLs padrão
@@ -130,7 +133,8 @@ flowchart LR
 |---------|-----|
 | Frontend | http://localhost:22667/dsp/ |
 | Backend API | http://localhost:22666/dsp-backend |
-| GeoServer | http://localhost:22668/geoserver/web/ |
+| GeoServer Exhibition | http://localhost:22668/geoserver/web/ |
+| GeoServer Download | http://localhost:22669/geoserver/web/ |
 
 ## Variáveis de ambiente relevantes (`.env` do core)
 
@@ -142,6 +146,8 @@ Embora o assistente de configuração `./config.sh` elimine a necessidade de edi
 | `DSP_SOURCE_JDBC_USER` / `DSP_SOURCE_JDBC_PASSWORD` | Credenciais da fonte JDBC |
 | `DSP_MIGRATION_EXECUTION_MODE` | `once`: migra uma vez e desliga o container do job. `continuous`: mantém o container ativo e sincroniza automaticamente as mudanças da origem periodicamente |
 | Credenciais dos 3 bancos do core | Usuário/senha de dsp-db, dsp-geoserver-exhibition-db e dsp-job-migration-db |
+| `DSP_GEOSERVER_WFS_BASE_URL` / `DSP_GEOSERVER_DOWNLOAD_HOST_PORT` | URL WFS do GeoServer Download (backend) e porta host `22669` |
+| `DSP_GEOSERVER_HOST_PORT` | Porta host do GeoServer Exhibition (`22668`) |
 | `DSP_CORS_ALLOWED_ORIGINS` | Origens permitidas no CORS do backend |
 | Build args do frontend | `VITE_BASE_URL`, `VITE_DSP_API_URL` — definem base path e URL da API usadas no build da imagem |
 | `DSP_BACKEND_PATH` / `DSP_FRONTEND_PATH` / `DSP_JOB_MIGRATION_PATH` | Paths dos repositórios irmãos usados na orquestração de build |
@@ -162,16 +168,17 @@ flowchart LR
   apply --> downloadJson["downloadThemesConfig.json"]
   apply --> appYaml["application.yaml"]
   downloadJson --> backendVol["volume dsp-backend"]
-  mapJson --> geoserverVol["volume GeoServer"]
+  mapJson --> geoserverExVol["volume GeoServer Exhibition"]
+  mapJson --> geoserverDlVol["volume GeoServer Download"]
 ```
 
 - **`./config.sh`** — ponto de entrada do adotante; reaplica, edita ou recria o `adopter-config.yaml` e dispara a geração dos JSON/YAML.
-- **`apply_adopter_config.py`** — traduz o YAML do adotante para os formatos consumidos por backend, frontend (via API), job de migração e GeoServer.
+- **`apply_adopter_config.py`** — traduz o YAML do adotante para os formatos consumidos por backend, frontend (via API), job de migração e GeoServers.
 - **`installation-config.json`** — labels, hierarquia, telas e KPIs (`DSP_INSTALLATION_CONFIG_FILE` no backend).
-- **`mapLayersConfig.json`** — grupos e camadas WMS do mapa (`DSP_MAP_LAYERS_FILE`); publicadas no GeoServer pelo `populate_geoserver.sh`.
-- **`downloadThemesConfig.json`** — catálogo de temas de download derivado de `area_of_interest` + `etl.layers[]` (`DSP_DOWNLOAD_THEMES_FILE` no backend); alinhado às mesmas camadas publicadas no GeoServer.
+- **`mapLayersConfig.json`** — grupos e camadas WMS do mapa (`DSP_MAP_LAYERS_FILE`); publicadas nos dois GeoServers pelo `populate_geoserver.sh`.
+- **`downloadThemesConfig.json`** — catálogo de temas de download derivado de `area_of_interest` + `etl.layers[]` (`DSP_DOWNLOAD_THEMES_FILE` no backend); `typeName`s alinhados às camadas do GeoServer Download (`wfsBaseUrl` em `localhost:22669`).
 - **`application.yaml`** — plano de migração ETL (tabelas, colunas, camadas genéricas).
 - **Volume `dsp-backend`** — monta `installation-config.json`, `mapLayersConfig.json` e `downloadThemesConfig.json` no container da API.
-- **Volume GeoServer** — monta `mapLayersConfig.json` para publicação WMS/WFS a partir do `exhibition-db`.
+- **Volumes GeoServer Exhibition e Download** — montam o mesmo `mapLayersConfig.json` para publicação a partir do `exhibition-db`.
 
 Veja também: [Fluxo de dados](../architecture/data-flow.md) (runtime) e [rer-dsp-backend](backend.md) (variáveis de ambiente de downloads).

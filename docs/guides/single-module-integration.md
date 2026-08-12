@@ -11,7 +11,7 @@ Para rodar o backend fora do Docker Compose do core, você precisa:
 
 - Um PostgreSQL/PostGIS acessível com o **schema `dsp`** já criado (normalmente provido pelo SQL de inicialização do core).
 - Os arquivos externos de configuração apontados por `DSP_INSTALLATION_CONFIG_FILE` (config de instalação: hierarquia, telas, KPIs), `DSP_MAP_LAYERS_FILE` (camadas de mapa) e `DSP_DOWNLOAD_THEMES_FILE` (temas de download) — normalmente gerados pelo `./config.sh` do core.
-- Rede acessível até o **GeoServer** (`DSP_GEOSERVER_WFS_BASE_URL`) para que busca e download de arquivos via WFS funcionem.
+- Rede acessível até o **GeoServer Download** (`DSP_GEOSERVER_WFS_BASE_URL`) para que busca e download de arquivos via WFS funcionem.
 - Variáveis `SPRING_DATASOURCE_URL/USERNAME/PASSWORD` apontando para esse banco, e `SPRING_JPA_HIBERNATE_DDL_AUTO=none` (o backend não gerencia o schema).
 
 Detalhes completos: [rer-dsp-backend](../modules/backend.md).
@@ -21,7 +21,7 @@ Detalhes completos: [rer-dsp-backend](../modules/backend.md).
 O frontend é o módulo mais simples de rodar isoladamente: ele só precisa saber a URL de um backend já em execução.
 
 - Defina `VITE_DSP_API_URL` no build, **ou** aponte em runtime via `public/config/env.json` (campo `urlBackend`) — útil quando a imagem já foi construída e você não quer rebuildar.
-- Não há dependência direta de banco de dados no frontend; mapas consomem GeoServer (WMS/WFS) e downloads consomem apenas a API do backend.
+- Não há dependência direta de banco de dados no frontend; mapas consomem GeoServer Exhibition (WMS/WFS) e downloads consomem apenas a API do backend.
 
 Detalhes completos: [rer-dsp-frontend](../modules/frontend.md).
 
@@ -40,4 +40,4 @@ Sem o core, você precisa criar manualmente os schemas de destino (`target` e `g
 
 ## rer-dsp-core sem os demais módulos
 
-Também é possível usar o core apenas para subir os **bancos e o GeoServer**, sem construir/subir backend e frontend — útil no cenário "só publicar mapas" descrito em [Módulos do DSP](../modulos.md#posso-utilizar-apenas-alguns-modulos).
+Também é possível usar o core apenas para subir os **bancos e o GeoServer Exhibition**, sem construir/subir backend e frontend — útil no cenário "só publicar mapas" descrito em [Módulos do DSP](../modulos.md#posso-utilizar-apenas-alguns-modulos).

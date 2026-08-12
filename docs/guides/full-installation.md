@@ -11,7 +11,7 @@ Este guia é voltado a um **administrador de infraestrutura** responsável por c
 | Shell Bash    | Os scripts do core são `bash` puro — nativo em Linux e macOS; no Windows requer WSL2 (sem suporte nativo via PowerShell/cmd)    |
 | Docker        | 24+ com Compose v2                                                                                                              |
 | Python        | Python 3 (usado pelo wizard `./config.sh`)                                                                                     |
-| Portas usadas | Frontend `22667`, Backend `22666`, GeoServer `22668`, DSP DB `20654`, Job migration DB `20655`, GeoServer Exhibition DB `20656` |
+| Portas usadas | Frontend `22667`, Backend `22666`, GeoServer Exhibition `22668`, GeoServer Download `22669`, DSP DB `20654`, Job migration DB `20655`, GeoServer Exhibition DB `20656` |
 | Armazenamento | Volumes persistentes para os 3 bancos Postgres/PostGIS (dsp-db, dsp-geoserver-exhibition-db, dsp-job-migration-db)              |
 
 ## Fluxo de instalação
@@ -76,14 +76,14 @@ Escolha a opção adequada ao seu momento:
 
 ### Passo 5 — `./start.sh`
 
-Usado após a instalação inicial. Verifica os repositórios irmãos, garante as configurações de instalação/mapa, sobe os bancos (mantendo a stack de migração ativa se o modo for `continuous`), builda e sobe backend + frontend + GeoServer. **Nunca** roda migração — isso é sempre feito pelo `./setup.sh`.
+Usado após a instalação inicial. Verifica os repositórios irmãos, garante as configurações de instalação/mapa, sobe os bancos (mantendo a stack de migração ativa se o modo for `continuous`), garante os GeoServers Exhibition e Download no ar e builda/sobe backend + frontend. A publicação das camadas nos GeoServers é feita pelo `./setup.sh`; o start apenas assegura que os containers estão ligados (sem rebuild forçado). **Nunca** roda migração — isso é sempre feito pelo `./setup.sh`.
 
 Detalhamento completo de cada opção e sub-fluxo: [rer-dsp-core](../modules/core.md#os-tres-scripts).
 
 ## O que não está incluído
 
 !!! warning "Reverse proxy / gateway"
-    O core **não** inclui um reverse proxy ou API gateway na frente dos serviços. Isso fica a cargo do adotante — normalmente um Nginx, Traefik ou balanceador de carga apontando para as portas do frontend, backend e GeoServer.
+    O core **não** inclui um reverse proxy ou API gateway na frente dos serviços. Isso fica a cargo do adotante — normalmente um Nginx, Traefik ou balanceador de carga apontando para as portas do frontend, backend e GeoServers (Exhibition e Download).
 
 !!! warning "HTTPS / TLS"
     Não há terminação TLS embutida na stack do core. A responsabilidade de expor os serviços via HTTPS (certificados, renovação, etc.) é do adotante, tipicamente no mesmo componente de reverse proxy.
