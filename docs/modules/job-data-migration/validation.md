@@ -16,7 +16,7 @@ Checklist e consultas para confirmar que a migração via `rer-dsp-job-data-migr
 - [ ] Sem steps `FAILED` em `BATCH_STEP_EXECUTION`
 - [ ] Contagem do destino coerente com a origem (respeitando `where-clause` / estratégia)
 - [ ] PK/unique presentes nas colunas de conflito
-- [ ] Amostra de geometrias com `ST_IsValid` e SRID conforme `srid` do YAML — em ambos os destinos (`dsp-db`: bbox/centroid; `exhibition-db`: geometry)
+- [ ] Amostra de geometrias com `ST_IsValid` e SRID conforme `srid` do YAML — em ambos os destinos (`dsp-db`: bbox/centroid; `geoserver-db`: geometry)
 - [ ] FKs de hierarquia resolvidas (se aplicável)
 - [ ] Layer GeoServer aponta para a tabela/view correta
 
@@ -79,14 +79,14 @@ FROM target_admin_units.target_l1_continent
 WHERE boundary_box IS NOT NULL;
 ```
 
-### exhibition-db (geometria completa)
+### geoserver-db (geometria completa)
 
 ```sql
 SELECT COUNT(*) AS source_count
 FROM source_admin_units.source_l1_continents
 WHERE source_continent_geom IS NOT NULL;
 
-SELECT COUNT(*) AS exhibition_count
+SELECT COUNT(*) AS geoserver_count
 FROM target_admin_units.target_l1_continent
 WHERE target_continent_geometry IS NOT NULL;
 ```
@@ -124,7 +124,7 @@ LIMIT 50;
 
 ## 4. Geometrias
 
-### exhibition-db — geometry completa
+### geoserver-db — geometry completa
 
 ```sql
 SELECT
@@ -152,7 +152,7 @@ FROM target_admin_units.target_l1_continent;
 | Verificação | Critério de aceite |
 |-------------|---------------------|
 | `invalidas` | 0 (ou lista conhecida tratada à parte) |
-| `srid_diferente` | 0 em relação ao `srid` do YAML (validar em exhibition-db e em bbox/centroid do dsp-db) |
+| `srid_diferente` | 0 em relação ao `srid` do YAML (validar em geoserver-db e em bbox/centroid do dsp-db) |
 | `nulas` | Compatível com regras de negócio |
 
 ## 5. Hierarquia entre levels
@@ -182,8 +182,8 @@ Repita o padrão para level-3 → level-2.
 | Checagem | Como |
 |----------|------|
 | Layer existe | UI/REST do GeoServer com o mesmo `layer-name` do YAML |
-| Store aponta para exhibition-db | Conferir datastore JDBC/PostGIS → `dsp-geoserver-exhibition-db` (não `dsp-db`) |
-| Preview WMS | Bounding box coerente com a amostra SQL do exhibition-db |
+| Store aponta para geoserver-db | Conferir datastore JDBC/PostGIS → `dsp-geoserver-db` (não `dsp-db`) |
+| Preview WMS | Bounding box coerente com a amostra SQL do geoserver-db |
 
 ## Sinais de falha frequentes
 

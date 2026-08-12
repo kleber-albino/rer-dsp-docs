@@ -140,7 +140,7 @@ Se `alteration_date` faltar no WFS, a busca continua OK e `lastUpdate` fica `nul
 
 - Depende do **core** para o schema `dsp` no Postgres e para os arquivos externos `installationConfig.json` e `mapLayersConfig.json`.
 - É consumido pelo **frontend** via API REST (`VITE_DSP_API_URL`).
-- Lê exclusivamente o banco **dsp-db** — nunca acessa `exhibition-db` diretamente.
+- Lê exclusivamente o banco **dsp-db** — nunca acessa `geoserver-db` diretamente.
 - Consulta o **GeoServer Download** via HTTP/WFS para downloads de arquivo.
 
 Veja também: [Bancos de dados](../architecture/databases.md), [Dependências entre módulos](../architecture/dependencies.md).

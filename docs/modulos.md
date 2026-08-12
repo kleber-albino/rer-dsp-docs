@@ -22,7 +22,7 @@ flowchart LR
   fe["rer-dsp-frontend<br/>SPA"]
   src[(Fonte JDBC<br/>do adotante)]
   dspdb[(dsp-db)]
-  exdb[(exhibition-db)]
+  exdb[(geoserver-db)]
   gsEx[GeoServer Exhibition]
   gsDl[GeoServer Download]
 
@@ -75,7 +75,7 @@ Seja honesto sobre estes pontos antes de decidir rodar módulos isoladamente:
 
 - **backend depende do core** para o schema `dsp` no Postgres e para os arquivos externos `installationConfig.json` e `mapLayersConfig.json`, normalmente gerados pelo `./config.sh` do core.
 - **frontend depende do backend** — precisa de uma URL de API válida (`VITE_DSP_API_URL` ou `public/config/env.json`); sem backend rodando, a maior parte da UI não funciona.
-- **job-data-migration depende do core** para o schema dos bancos `dsp-db`, `exhibition-db` e `batch`, e depende de uma fonte JDBC externa (do adotante) que o core não fornece.
+- **job-data-migration depende do core** para o schema dos bancos `dsp-db`, `geoserver-db` e `batch`, e depende de uma fonte JDBC externa (do adotante) que o core não fornece.
 - **core não tem dependência de runtime** sobre os outros três — ele só precisa deles no momento do build/orquestração Docker (paths configurados via `DSP_BACKEND_PATH`, `DSP_FRONTEND_PATH`, `DSP_JOB_MIGRATION_PATH`).
 
 ## Quais tecnologias são utilizadas?

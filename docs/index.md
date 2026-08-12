@@ -18,11 +18,11 @@ O **DSP** (*Data Sharing Platform*) é a plataforma que **compartilha, visualiza
 ```mermaid
 flowchart LR
   srcDb[("SEU DATABASE<br/>Banco da sua organização que você quer migrar os dados.<br/>Fonte a migrar para o DSP.")]
-  jobMig["JOB-DATA-MIGRATION<br/>ETL Spring Batch.<br/>Dual-write: origem → dsp-db + exhibition-db."]
+  jobMig["JOB-DATA-MIGRATION<br/>ETL Spring Batch.<br/>Dual-write: origem → dsp-db + geoserver-db."]
   core["CORE<br/>CONFIG · SETUP · START.<br/>Prepara bancos e orquestra os demais módulos."]
 
   dspDb[("DSP DB<br/>Operacional: negócio + bbox/centroid.")]
-  gsDb[("EXHIBITION DB<br/>Geometria completa dsp.*<br/>GeoServer Exhibition.")]
+  gsDb[("GEOSERVER DB<br/>Geometria completa dsp.*<br/>Lido pelos dois GeoServers.")]
 
   be["DSP BACKEND<br/>API REST e regras de negócio."]
   fe["DSP FRONTEND<br/>Interface web da plataforma.<br/>Consulta, mapas e compartilhamento."]

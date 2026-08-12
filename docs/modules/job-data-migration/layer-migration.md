@@ -96,7 +96,7 @@ Além de `batch`, `source` e `target`, configure:
 spring:
   datasource:
     geo-target:
-      url: jdbc:postgresql://localhost:5432/dsp-geoserver-exhibition-db
+      url: jdbc:postgresql://localhost:5432/dsp-geoserver-db
       username: dsp_geo
       password: dsp_geo
 ```

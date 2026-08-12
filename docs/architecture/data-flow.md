@@ -7,7 +7,7 @@ sequenceDiagram
   participant Src as Fonte JDBC do adotante
   participant Job as rer-dsp-job-data-migration
   participant DspDb as dsp-db
-  participant ExDb as exhibition-db
+  participant ExDb as geoserver-db
   participant GsEx as GeoServer Exhibition
   participant GsDl as GeoServer Download
   participant Be as rer-dsp-backend
@@ -30,8 +30,8 @@ sequenceDiagram
 1. **Job lê a fonte JDBC do adotante.** O `rer-dsp-job-data-migration` conecta-se ao banco de origem da organização (datasource `source`) e lê atributos e geometrias das tabelas configuradas.
 2. **Dual-write nos dois destinos.** Cada execução grava simultaneamente em:
    - `dsp-db` (datasource `target`): dados de negócio, `boundary_box` e `centroid_coordinates` — **sem** a geometria completa.
-   - `exhibition-db` (datasource `geo-target`): os mesmos atributos, mas **com** a geometria completa.
-3. **Dois GeoServers leem o exhibition-db.** Ambos publicam FeatureTypes a partir do mesmo `dsp-geoserver-exhibition-db` e do mesmo `mapLayersConfig.json`:
+   - `geoserver-db` (datasource `geo-target`): os mesmos atributos, mas **com** a geometria completa.
+3. **Dois GeoServers leem o geoserver-db.** Ambos publicam FeatureTypes a partir do mesmo `dsp-geoserver-db` e do mesmo `mapLayersConfig.json`:
    - **GeoServer Exhibition** — WMS/WFS para navegação no mapa.
    - **GeoServer Download** — WFS usado só pelo backend nas exportações (CSV).
 4. **Backend serve a API a partir do dsp-db.** O `rer-dsp-backend` lê apenas `dsp-db` para dados de negócio; como esse banco não tem geometria completa, a API nunca expõe polígonos inteiros — apenas bounding box e centroide, além dos atributos operacionais.

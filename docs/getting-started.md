@@ -50,9 +50,9 @@ O `.env` referencia os caminhos dos módulos irmãos (`DSP_BACKEND_PATH`, `DSP_F
 ./setup.sh
 ```
 
-Escolha a **opção 1** no menu: demo com seed sintético do Brasil, sem precisar de banco externo. Essa opção prepara os três bancos (dsp-db, dsp-geoserver-exhibition-db, dsp-job-migration-db) e popula os dados de demonstração.
+Escolha a **opção 1** no menu: demo com seed sintético do Brasil, sem precisar de banco externo. Essa opção prepara os três bancos (dsp-db, dsp-geoserver-db, dsp-job-migration-db) e popula os dados de demonstração.
 
-Esse passo cria os containers Docker, sobe os bancos (dsp-db, dsp-geoserver-exhibition-db) e os GeoServers (Exhibition + Download), e executa o job de migração para popular os bancos com os dados de demonstração.
+Esse passo cria os containers Docker, sobe os bancos (dsp-db, dsp-geoserver-db) e os GeoServers (Exhibition + Download), e executa o job de migração para popular os bancos com os dados de demonstração.
 
 ## Passo 4 — Subir os demais componentes
 

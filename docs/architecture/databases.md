@@ -16,16 +16,16 @@ Contrato dos **quatro papéis** de datasource no fluxo de migração e consumo d
 
 ## Visão geral
 
-A geometria completa fica isolada no banco de **exibição** (`dsp-geoserver-exhibition-db`). O banco **operacional** (`dsp-db`) guarda atributos de negócio e representações leves (`boundary_box`, `centroid_coordinates`) para consultas da API — sem polígonos completos.
+A geometria completa fica isolada no banco dos **GeoServers** (`dsp-geoserver-db`). O banco **operacional** (`dsp-db`) guarda atributos de negócio e representações leves (`boundary_box`, `centroid_coordinates`) para consultas da API — sem polígonos completos.
 
-Dois GeoServers leem esse mesmo exhibition-db: **Exhibition** (mapa) e **Download** (WFS de exportação via backend).
+Dois GeoServers leem esse mesmo geoserver-db: **Exhibition** (mapa) e **Download** (WFS de exportação via backend).
 
 ```mermaid
 flowchart LR
   src[(source<br/>origem externa)]
   job[dsp-batch]
   dsp[(dsp-db<br/>operacional)]
-  ex[(dsp-geoserver-exhibition-db<br/>geometria completa)]
+  ex[(dsp-geoserver-db<br/>geometria completa)]
   batch[(batch_metadata)]
   api[backend]
   gsEx[GeoServer Exhibition]
@@ -49,36 +49,36 @@ flowchart LR
 |-------|-------------------|----------|
 | **source** | Fora do Compose (`spring.datasource.source`) | Banco da organização — fonte da migração |
 | **dsp-db** | `dsp-db` · `spring.datasource.target` | Dados de negócio + `boundary_box` + `centroid_coordinates` — **sem** coluna de geometria completa |
-| **exhibition-db** | `dsp-geoserver-exhibition-db` · `spring.datasource.geo-target` | Mesmas tabelas `dsp.*` **com** coluna `geometry` completa |
+| **geoserver-db** | `dsp-geoserver-db` · `spring.datasource.geo-target` | Mesmas tabelas `dsp.*` **com** coluna `geometry` completa |
 | **batch** | `dsp-job-migration-db` · `spring.datasource.batch` | Metadados Spring Batch (`BATCH_*`) |
 
-Ambos os bancos de destino (`dsp-db` e `exhibition-db`) expõem o schema `dsp` com as mesmas tabelas lógicas (`territory_level_1`, `territory_level_2`, `territory_level_3`, `area_of_interest`), mas com colunas geo distintas conforme a seção abaixo.
+Ambos os bancos de destino (`dsp-db` e `geoserver-db`) expõem o schema `dsp` com as mesmas tabelas lógicas (`territory_level_1`, `territory_level_2`, `territory_level_3`, `area_of_interest`), mas com colunas geo distintas conforme a seção abaixo.
 
 ---
 
 ## Colunas geo por banco
 
-| Coluna | Tipo PostGIS | dsp-db | exhibition-db |
+| Coluna | Tipo PostGIS | dsp-db | geoserver-db |
 |--------|--------------|--------|---------------|
 | Atributos de negócio (`id`, `name`, FKs, datas, etc.) | — | sim | sim |
 | `geometry` | `geometry(MultiPolygon)` (sem typmod de SRID no DDL) | **não** | **sim** |
 | `boundary_box` | `geometry(Polygon)` | **sim** | **não** |
 | `centroid_coordinates` | `geometry(Point)` | **sim** | **não** |
 
-O writer do job deriva `boundary_box` e `centroid_coordinates` a partir da geometria lida na origem e grava só em `dsp-db`. O `exhibition-db` recebe a geometria completa.
+O writer do job deriva `boundary_box` e `centroid_coordinates` a partir da geometria lida na origem e grava só em `dsp-db`. O `geoserver-db` recebe a geometria completa.
 
 ---
 
 ## Quem lê e quem escreve
 
-| Componente | source | dsp-db | exhibition-db | batch |
+| Componente | source | dsp-db | geoserver-db | batch |
 |------------|--------|--------|---------------|-------|
 | `rer-dsp-job-data-migration` | leitura | escrita (bbox/centroid) | escrita (geometry) | escrita (`BATCH_*`) |
 | `rer-dsp-backend` / `rer-dsp-core` | — | leitura/escrita de negócio | — | — |
 | GeoServer Exhibition | — | — | leitura (WMS/WFS mapa) | — |
 | GeoServer Download | — | — | leitura (WFS downloads via backend) | — |
 
-Os dois GeoServers apontam **somente** para `dsp-geoserver-exhibition-db` (mesmo PostGIS; processos isolados).
+Os dois GeoServers apontam **somente** para `dsp-geoserver-db` (mesmo PostGIS; processos isolados).
 
 ---
 
@@ -88,7 +88,7 @@ Cada execução do job faz **1 source → 2 targets**:
 
 1. Lê origem (atributos + geometria).
 2. Grava em `dsp-db`: atributos + `boundary_box` + `centroid_coordinates`.
-3. Grava em `exhibition-db`: atributos + `geometry` completa.
+3. Grava em `geoserver-db`: atributos + `geometry` completa.
 
 ```mermaid
 flowchart LR
@@ -96,7 +96,7 @@ flowchart LR
 
   subgraph write ["2. Dual-write — UPSERT ON CONFLICT"]
     job -->|"atributos + boundary_box<br/>+ centroid_coordinates"| dspdb[(dsp-db)]
-    job -->|"atributos + geometry<br/>completa"| exdb[(exhibition-db)]
+    job -->|"atributos + geometry<br/>completa"| exdb[(geoserver-db)]
   end
 ```
 
@@ -123,7 +123,7 @@ Instalações distintas podem usar SRIDs diferentes por "layer", desde que o YAM
 |-------|----------------|------------------------|
 | source | `spring.datasource.source` | — (externo) |
 | dsp-db (target) | `spring.datasource.target` | `dsp-db` |
-| exhibition-db (geo-target) | `spring.datasource.geo-target` | `dsp-geoserver-exhibition-db` |
+| geoserver-db (geo-target) | `spring.datasource.geo-target` | `dsp-geoserver-db` |
 | batch | `spring.datasource.batch` | `dsp-job-migration-db` |
 
 Detalhe operacional: [Job data-migration — Configuração e execução](../modules/job-data-migration/configuration.md) · validação: [Validação pós-migração](../modules/job-data-migration/validation.md) · orquestração dos bancos: [rer-dsp-core](../modules/core.md).

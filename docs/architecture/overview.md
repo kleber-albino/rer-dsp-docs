@@ -38,7 +38,7 @@ flowchart LR
   fe["rer-dsp-frontend<br/>SPA Vue 3"]
   src[(Fonte JDBC<br/>do adotante)]
   dspdb[(dsp-db)]
-  exdb[(exhibition-db)]
+  exdb[(geoserver-db)]
   gsEx[GeoServer Exhibition]
   gsDl[GeoServer Download]
 
@@ -125,7 +125,7 @@ flowchart TB
 | Apresentação | [rer-dsp-frontend](https://github.com/Rural-Environmental-Registry/rer-dsp-frontend) | Interface web/mapas para consulta e compartilhamento                                  |
 | API | [rer-dsp-backend](https://github.com/Rural-Environmental-Registry/rer-dsp-backend) | Contratos REST, dados de negócio da plataforma                                        |
 | Integração / ETL | [rer-dsp-job-data-migration](https://github.com/Rural-Environmental-Registry/rer-dsp-job-data-migration) | Sincroniza atributos e geometria da fonte do adotante para os bancos do DSP           |
-| Publicação geo | GeoServer Exhibition + GeoServer Download | Exhibition: WMS/WFS de mapa; Download: WFS de exportação (mesmo exhibition-db) |
+| Publicação geo | GeoServer Exhibition + GeoServer Download | Exhibition: WMS/WFS de mapa; Download: WFS de exportação (mesmo geoserver-db) |
 | Persistência | PostgreSQL / PostGIS (3 bancos) | Dados operacionais, geometrias e metadados de execução                                |
 | Documentação | [rer-dsp-docs](https://github.com/Rural-Environmental-Registry/rer-dsp-docs) (esta wiki) | Onboarding e padrões transversais de todos os repositórios                            |
 
@@ -135,7 +135,7 @@ flowchart TB
 
 O `rer-dsp-core` não contém código de aplicação/domínio — sua responsabilidade é exclusivamente de **orquestração e configuração**:
 
-- Sobe os 3 bancos Postgres/PostGIS (dsp-db, dsp-geoserver-exhibition-db, dsp-job-migration-db) e os dois GeoServers (Exhibition + Download) via Docker Compose.
+- Sobe os 3 bancos Postgres/PostGIS (dsp-db, dsp-geoserver-db, dsp-job-migration-db) e os dois GeoServers (Exhibition + Download) via Docker Compose.
 - Gera, a partir do wizard `./config.sh`, o `adopter-config.yaml` e os arquivos operacionais consumidos pelo backend (`installationConfig.json`, `mapLayersConfig.json`) e pelo job de migração (`application.yaml`).
 - Orquestra o build e a subida do backend, frontend e job de migração.
 - Não tem dependência de runtime sobre os demais módulos — precisa deles apenas no momento do build/orquestração.
@@ -150,7 +150,7 @@ Detalhe operacional completo: [rer-dsp-core](../modules/core.md).
 flowchart LR
   A[(Fonte JDBC<br/>do adotante)] -->|1. Detecta mudanças| B[dsp-batch]
   B -->|2a. bbox + centroid| C[(dsp-db)]
-  B -->|2b. geometry| E[(exhibition-db)]
+  B -->|2b. geometry| E[(geoserver-db)]
   B -->|3. Metadados| D[(batch_metadata)]
   E -->|4a. Publica mapa| GEx[GeoServer Exhibition]
   E -->|4b. Publica downloads| GDl[GeoServer Download]
@@ -160,8 +160,8 @@ flowchart LR
   GEx -->|7. WMS| H
 ```
 
-1. **Ingestão / sync** — job de migração faz dual-write: `dsp-db` (negócio + bbox/centroid) e `exhibition-db` (geometria completa).
-2. **Publicação** — GeoServer Exhibition e GeoServer Download leem **somente** `exhibition-db` (processos isolados).
+1. **Ingestão / sync** — job de migração faz dual-write: `dsp-db` (negócio + bbox/centroid) e `geoserver-db` (geometria completa).
+2. **Publicação** — GeoServer Exhibition e GeoServer Download leem **somente** `geoserver-db` (processos isolados).
 3. **Consumo via API** — backend lê `dsp-db` (sem polígonos completos) e consulta o **GeoServer Download** via WFS para downloads de arquivo.
 4. **Consumo via UI** — frontend consome a API do backend (busca, KPIs, downloads) e, para mapas, consome WMS/WFS do **GeoServer Exhibition** diretamente.
 
@@ -171,7 +171,7 @@ flowchart LR
     - **`boundary_box`** (bbox) — o retângulo envolvente da geometria (menor e maior latitude/longitude).
     - **`centroid_coordinates`** — o ponto central da geometria.
 
-    Essa é uma escolha de **performance**: consultas, filtros e ordenações que usam bbox/centroide (por exemplo, "quais registros estão dentro desta área" ou cálculos de proximidade) são muito mais leves de processar do que operar sobre polígonos completos, especialmente com grande volumetria de dados. A API e a interface (busca, listagem, KPIs) não precisam do desenho exato do polígono para funcionar — só a camada de mapa (`exhibition-db` → GeoServer) precisa da geometria completa, por isso ela fica isolada em um banco separado.
+    Essa é uma escolha de **performance**: consultas, filtros e ordenações que usam bbox/centroide (por exemplo, "quais registros estão dentro desta área" ou cálculos de proximidade) são muito mais leves de processar do que operar sobre polígonos completos, especialmente com grande volumetria de dados. A API e a interface (busca, listagem, KPIs) não precisam do desenho exato do polígono para funcionar — só a camada de mapa (`geoserver-db` → GeoServer) precisa da geometria completa, por isso ela fica isolada em um banco separado.
 
 Detalhe passo a passo com diagrama de sequência: [Fluxo de dados](data-flow.md).
 
@@ -185,7 +185,7 @@ No fluxo do job existem **quatro** papéis de datasource:
 |-------|-------------------|-----------------|
 | Origem | `spring.datasource.source` | Dados legados / cadastro a migrar |
 | Operacional | `spring.datasource.target` → `dsp-db` | Negócio + `boundary_box` + `centroid_coordinates` ([por quê](#fluxo-de-dados)) — **sem** `geometry` completa |
-| Exibição | `spring.datasource.geo-target` → `dsp-geoserver-exhibition-db` | Mesmas tabelas `dsp.*` **com** `geometry` completa |
+| GeoServers | `spring.datasource.geo-target` → `dsp-geoserver-db` | Mesmas tabelas `dsp.*` **com** `geometry` completa |
 | Metadados | `spring.datasource.batch` | Controle Spring Batch (`BATCH_*`) |
 
 Contrato completo (colunas, leitores/escritores, SRID via YAML): [Bancos de dados](databases.md).

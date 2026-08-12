@@ -59,7 +59,7 @@ A auto-configuração JDBC do Boot é excluída. Quatro beans manuais — cada u
 | `dataSource` (`@Primary`) | `spring.datasource.batch` | `batch_metadata` | JobRepository (`BATCH_*`) |
 | `sourceDataSource` | `spring.datasource.source` | Fonte JDBC do adotante | Leitura / change detection / partição |
 | `targetDataSource` | `spring.datasource.target` | `dsp-db` | UPSERT negócio + `boundary_box` + `centroid_coordinates` |
-| `geoTargetDataSource` | `spring.datasource.geo-target` | `exhibition-db` | UPSERT `geometry` completa + bbox/centroid |
+| `geoTargetDataSource` | `spring.datasource.geo-target` | `geoserver-db` | UPSERT `geometry` completa + bbox/centroid |
 
 Contrato completo dos papéis: [Bancos de dados](../../architecture/databases.md).
 
@@ -69,14 +69,14 @@ Contrato completo dos papéis: [Bancos de dados](../../architecture/databases.md
 
 ### 1. Bancos de destino
 
-Se você não está usando o `rer-dsp-core` para provisionar os bancos, crie manualmente `dsp-db` e `exhibition-db` com a extensão PostGIS:
+Se você não está usando o `rer-dsp-core` para provisionar os bancos, crie manualmente `dsp-db` e `geoserver-db` com a extensão PostGIS:
 
 ```bash
 psql -h localhost -p 6666 -U postgres -c "CREATE DATABASE dsp_db;"
 psql -h localhost -p 6666 -U postgres -d dsp_db -c "CREATE EXTENSION IF NOT EXISTS postgis;"
 
-psql -h localhost -p 6666 -U postgres -c "CREATE DATABASE dsp_exhibition_db;"
-psql -h localhost -p 6666 -U postgres -d dsp_exhibition_db -c "CREATE EXTENSION IF NOT EXISTS postgis;"
+psql -h localhost -p 6666 -U postgres -c "CREATE DATABASE dsp_geoserver_db;"
+psql -h localhost -p 6666 -U postgres -d dsp_geoserver_db -c "CREATE EXTENSION IF NOT EXISTS postgis;"
 ```
 
 ### 2. Schema de metadados do Spring Batch
@@ -109,7 +109,7 @@ Arquivo: `src/main/resources/application.yaml`.
 flowchart LR
   src[("source<br/>leitura")] --> yaml[application.yaml<br/>mapeamento]
   yaml --> tgt[("dsp-db<br/>bbox + centroid")]
-  yaml --> geo[("exhibition-db<br/>geometry")]
+  yaml --> geo[("geoserver-db<br/>geometry")]
   yaml --> batch[("batch_metadata<br/>execução")]
 ```
 
@@ -283,7 +283,7 @@ spring:
       password: postgres
       driver-class-name: org.postgresql.Driver
     geo-target:
-      url: jdbc:postgresql://localhost:6666/dsp_exhibition_db
+      url: jdbc:postgresql://localhost:6666/dsp_geoserver_db
       username: postgres
       password: postgres
       driver-class-name: org.postgresql.Driver
@@ -367,7 +367,7 @@ sequenceDiagram
       W->>Pers: dual-write UPSERT
     end
     Pers->>Pers: dsp-db - bbox + centroid
-    Pers->>Pers: exhibition-db - geometry
+    Pers->>Pers: geoserver-db - geometry
   end
 ```
 

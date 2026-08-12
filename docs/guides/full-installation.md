@@ -11,8 +11,8 @@ Este guia é voltado a um **administrador de infraestrutura** responsável por c
 | Shell Bash    | Os scripts do core são `bash` puro — nativo em Linux e macOS; no Windows requer WSL2 (sem suporte nativo via PowerShell/cmd)    |
 | Docker        | 24+ com Compose v2                                                                                                              |
 | Python        | Python 3 (usado pelo wizard `./config.sh`)                                                                                     |
-| Portas usadas | Frontend `22667`, Backend `22666`, GeoServer Exhibition `22668`, GeoServer Download `22669`, DSP DB `20654`, Job migration DB `20655`, GeoServer Exhibition DB `20656` |
-| Armazenamento | Volumes persistentes para os 3 bancos Postgres/PostGIS (dsp-db, dsp-geoserver-exhibition-db, dsp-job-migration-db)              |
+| Portas usadas | Frontend `22667`, Backend `22666`, GeoServer Exhibition `22668`, GeoServer Download `22669`, DSP DB `20654`, Job migration DB `20655`, GeoServer DB `20656` |
+| Armazenamento | Volumes persistentes para os 3 bancos Postgres/PostGIS (dsp-db, dsp-geoserver-db, dsp-job-migration-db)              |
 
 ## Fluxo de instalação
 

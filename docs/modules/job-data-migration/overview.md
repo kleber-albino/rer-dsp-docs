@@ -24,7 +24,7 @@ O significado de cada level não está fixo no código — vem das tabelas e col
 flowchart LR
   src[(Fonte JDBC do adotante)] -->|read| app[dsp-batch]
   app -->|"bbox + centroid"| tgt[(dsp-db)]
-  app -->|geometry| geo[(exhibition-db)]
+  app -->|geometry| geo[(geoserver-db)]
   app -->|"BATCH_*"| meta[(batch_metadata)]
   geo -.->|layers WMS/WFS| gsEx[GeoServer Exhibition]
   geo -.->|layers WFS downloads| gsDl[GeoServer Download]
@@ -34,10 +34,10 @@ flowchart LR
 |------------|------------------|
 | Fonte (`source`) | Banco JDBC do adotante — fonte da verdade a ser lida |
 | `dsp-db` (`target`) | Base operacional — negócio + bbox/centroid |
-| `exhibition-db` (`geo-target`) | Geometria completa para os GeoServers |
+| `geoserver-db` (`geo-target`) | Geometria completa para os GeoServers |
 | `batch_metadata` (`batch`) | Histórico e controle Spring Batch |
 | `dsp-batch` | Orquestra detecção, partição, dual-write UPSERT |
-| GeoServer Exhibition / Download | Consomem **somente** `exhibition-db` |
+| GeoServer Exhibition / Download | Consomem **somente** `geoserver-db` |
 
 !!! tip "Publicação de camadas"
     Este job **não** publica camadas nos GeoServers — isso é feito pelo `rer-dsp-core` via `./setup.sh`/`populate_geoserver.sh` (Exhibition e Download) a partir do `mapLayersConfig.json`. O `layer-name` no YAML do job só precisa estar alinhado ao nome usado nessa publicação.
@@ -53,7 +53,7 @@ flowchart TD
   B -->|há mudanças| D["MasterStep particionado<br/>fatia a leitura em partições"]
   D --> E["Workers: Reader → Processor → Writer<br/>lê, valida e grava cada partição"]
   E -->|bbox + centroid| F1[(dsp-db)]
-  E -->|geometry completa| F2[(exhibition-db)]
+  E -->|geometry completa| F2[(geoserver-db)]
   A -.->|registra execução| M[(batch_metadata)]
   E -.->|registra execução| M
 ```
@@ -65,7 +65,7 @@ flowchart TD
 | Partitioner | Fatia por `partition-column` (se numérica) |
 | Reader | Páginas com geometria em GeoJSON |
 | Processor | Pass-through (sem transformação de negócio) |
-| Writer | UPSERT `ON CONFLICT` em dois destinos: `dsp-db` (bbox + centroid) e `exhibition-db` (geometry completa) |
+| Writer | UPSERT `ON CONFLICT` em dois destinos: `dsp-db` (bbox + centroid) e `geoserver-db` (geometry completa) |
 
 ## Ordem obrigatória
 
