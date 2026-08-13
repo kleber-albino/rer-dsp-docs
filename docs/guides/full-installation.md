@@ -9,6 +9,7 @@ Este guia é voltado a um **administrador de infraestrutura** responsável por c
 | Requisito     | Detalhe                                                                                                                         |
 |---------------|---------------------------------------------------------------------------------------------------------------------------------|
 | Shell Bash    | Os scripts do core são `bash` puro — nativo em Linux e macOS; no Windows requer WSL2 (sem suporte nativo via PowerShell/cmd)    |
+| Git           | se os repositórios irmãos ainda não estiverem clonados; os scripts podem cloná-los automaticamente                       |
 | Docker        | 24+ com Compose v2                                                                                                              |
 | Python        | Python 3 (usado pelo wizard `./config.sh`)                                                                                     |
 | Portas usadas | Frontend `22667`, Backend `22666`, GeoServer Exhibition `22668`, GeoServer Download `22669`, DSP DB `20654`, Job migration DB `20655`, GeoServer DB `20656` |
@@ -26,6 +27,17 @@ flowchart LR
 ```
 
 ### Passo 1 — Organizar os repositórios
+
+#### Opção A — fluxo mais simples (recomendado)
+
+Clone apenas o core. Os scripts `./config.sh`, `./setup.sh` e `./start.sh` detectam repositórios irmãos ausentes, exibem a estrutura de pastas que será criada e oferecem cloná-los automaticamente:
+
+```bash
+git clone https://github.com/Rural-Environmental-Registry/rer-dsp-core.git
+cd rer-dsp-core
+```
+
+#### Opção B — clone manual
 
 Clone os 4 repositórios (core, backend, frontend, job-data-migration) como pastas **irmãs**, dentro de um mesmo diretório pai (por exemplo `DSP/`):
 
@@ -51,7 +63,7 @@ Esse layout é o esperado por padrão pelos scripts do core (`../rer-dsp-backend
 
 ### Passo 2 — Configurar o core
 
-Dentro de `rer-dsp-core`, copie o arquivo de exemplo e ajuste o `.env` para o seu ambiente:
+Dentro de `rer-dsp-core`, o `.env` é criado automaticamente na primeira execução de `./config.sh` ou `./setup.sh` a partir de `.env.example`. Opcionalmente, copie e ajuste manualmente:
 
 ```bash
 cd rer-dsp-core

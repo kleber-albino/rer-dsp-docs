@@ -26,12 +26,14 @@ flowchart TD
 - SQL de inicialização dos bancos.
 - GeoServer Exhibition (mapa) e GeoServer Download (WFS de exportação).
 - Três scripts operacionais: `./config.sh`, `./setup.sh`, `./start.sh`.
+- Clone automático dos repositórios irmãos quando ausentes (com preview da estrutura de pastas antes da confirmação).
 
 ## Pré-requisitos
 
 | Requisito | Detalhe |
 |-----------|---------|
 | Shell Bash | Os scripts (`config.sh`, `setup.sh`, `start.sh`) são `bash` puro. Nativo em Linux e macOS; no Windows requer WSL2 (não há suporte nativo via PowerShell/cmd). |
+| Git | Clonar repositórios irmãos ausentes (automático via scripts ou manual); necessário apenas se os repos ainda não existirem |
 | Docker 24+ com Compose v2 | Usado para subir bancos, GeoServer e os demais módulos |
 | Python 3 | Usado pelo wizard `./config.sh` (`scripts/apply_adopter_config.py`) |
 

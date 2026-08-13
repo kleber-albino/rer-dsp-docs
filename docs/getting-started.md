@@ -10,12 +10,24 @@ Para uma instalação com dados reais de uma organização, veja [Instalação c
 
 | Ferramenta | Versão             |
 |------------|--------------------|
+| Git        | se os repositórios irmãos ainda não estiverem clonados |
 | Docker     | 24+ com Compose v2 |
 | Python     | 3                  |
 
-Nenhum outro pré-requisito é necessário — o `rer-dsp-core` orquestra o build dos demais módulos via Docker.
+O `rer-dsp-core` orquestra o build dos demais módulos via Docker. Se faltar algum repositório irmão, os scripts oferecem clonar automaticamente
 
 ## Passo 1 — Organizar os repositórios
+
+### Opção A — fluxo mais simples (recomendado)
+
+Clone apenas o core. Os scripts `./config.sh`, `./setup.sh` e `./start.sh` detectam repositórios ausentes e oferecem cloná-los automaticamente:
+
+```bash
+git clone https://github.com/Rural-Environmental-Registry/rer-dsp-core.git
+cd rer-dsp-core
+```
+
+### Opção B — clone manual
 
 Clone os quatro repositórios de aplicação como pastas irmãs, por exemplo dentro de uma pasta `DSP/`:
 
@@ -26,6 +38,7 @@ git clone https://github.com/Rural-Environmental-Registry/rer-dsp-backend.git
 git clone https://github.com/Rural-Environmental-Registry/rer-dsp-frontend.git
 git clone https://github.com/Rural-Environmental-Registry/rer-dsp-job-data-migration.git
 ```
+
 Resultado:
 
 ```text
@@ -35,14 +48,20 @@ DSP/
 ├── rer-dsp-frontend/
 └── rer-dsp-job-data-migration/
 ```
+
 ## Passo 2 — Configurar o core
 
 ```bash
 cd rer-dsp-core
+```
+
+O `.env` é criado automaticamente na primeira execução de `./setup.sh` ou `./config.sh` a partir de `.env.example`. Opcionalmente, copie manualmente:
+
+```bash
 cp .env.example .env
 ```
 
-O `.env` referencia os caminhos dos módulos irmãos (`DSP_BACKEND_PATH`, `DSP_FRONTEND_PATH`, `DSP_JOB_MIGRATION_PATH`) — os defaults já assumem a estrutura de pastas do Passo 1.
+O `.env` referencia os caminhos dos módulos irmãos (`DSP_BACKEND_PATH`, `DSP_FRONTEND_PATH`, `DSP_JOB_MIGRATION_PATH`) — os defaults já assumem a estrutura de pastas da opção B do Passo 1.
 
 ## Passo 3 — Rodar o setup em modo demo
 

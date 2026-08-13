@@ -82,7 +82,7 @@ Seja honesto sobre estes pontos antes de decidir rodar módulos isoladamente:
 
 | Camada | Tecnologia                                                                                                          |
 |--------|---------------------------------------------------------------------------------------------------------------------|
-| Orquestração | Docker 24+, Docker Compose v2, Python 3                                                                             |
+| Orquestração | Git, Docker 24+, Docker Compose v2, Python 3 |
 | Backend | Java 21, Spring Boot 3.4.2, Gradle, JPA/Hibernate + hibernate-spatial, springdoc-openapi                            |
 | Frontend | Vue 3 (Composition API), TypeScript, Vite, Tailwind CSS, [`@rural-environmental-registry/map_component`](https://www.npmjs.com/package/@rural-environmental-registry/map_component) (Leaflet) |
 | ETL | Java 21, Spring Boot 3.4.2, Spring Batch, Maven                                                                     |
