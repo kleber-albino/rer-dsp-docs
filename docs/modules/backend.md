@@ -108,6 +108,40 @@ Estrutura do JSON:
   "formats": {
     "date": "dd/MM/yyyy",
     "dateTime": "dd/MM/yyyy HH:mm:ss"
+  },
+  "map": {
+    "initialView": {
+      "mode": "territorial_bbox",
+      "latitude": null,
+      "longitude": null,
+      "zoom": null
+    }
+  }
+}
+```
+
+Exemplo com modo manual:
+
+```json
+"map": {
+  "initialView": {
+    "mode": "manual",
+    "latitude": 39.5,
+    "longitude": -8.0,
+    "zoom": 7
+  }
+}
+```
+
+Exemplo com modo planet:
+
+```json
+"map": {
+  "initialView": {
+    "mode": "planet",
+    "latitude": null,
+    "longitude": null,
+    "zoom": null
   }
 }
 ```
@@ -117,6 +151,7 @@ Estrutura do JSON:
 | `hierarchy` | Labels e placeholders dos níveis `level1` / `level2` / `level3` — as **chaves** são estáveis (batem com `GET /territory/options?level=…`); altere o `label`, não a `key` |
 | `screens.home` / `screens.downloads` | Quais níveis cada tela usa e textos dos campos |
 | `kpis` | Cards da home (rótulos, unidades, cores) |
+| `map.initialView` | Modo de abertura/reset do mapa na Home. `mode` obrigatório: `territorial_bbox` (enquadra via `GET /territory/boundary-box`; se nenhum nível territorial L1/L2/L3 estiver configurado no ETL, o `./config.sh` grava `planet` explicitamente), `manual` (exige `latitude`, `longitude`, `zoom`) ou `planet` (sempre centro `[0,0]` zoom `0`) |
 | `areaOfInterest` | Unidade/rótulo da área do imóvel — a área em si vem migrada da origem, o DSP não a calcula nem converte unidade |
 | `formats` | Padrões de exibição de data/hora na UI |
 
