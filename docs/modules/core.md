@@ -140,6 +140,8 @@ flowchart LR
 
 ## Variáveis de ambiente relevantes (`.env` do core)
 
+O `.env` é criado automaticamente na primeira execução de `./config.sh`, `./setup.sh` ou `./start.sh` (a partir de `.env.example`). Não é necessário copiá-lo manualmente.
+
 Embora o assistente de configuração `./config.sh` elimine a necessidade de editar manualmente o `.env` na maioria dos casos, compreender as principais variáveis pode ser útil para personalizar a instalação, solucionar problemas ou entender como o processo de implantação e migração é configurado.
 
 | Variável | Função |

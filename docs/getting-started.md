@@ -49,19 +49,15 @@ DSP/
 └── rer-dsp-job-data-migration/
 ```
 
-## Passo 2 — Configurar o core
+## Passo 2 — Entrar no core
 
 ```bash
 cd rer-dsp-core
 ```
 
-O `.env` é criado automaticamente na primeira execução de `./setup.sh` ou `./config.sh` a partir de `.env.example`. Opcionalmente, copie manualmente:
+Não é necessário criar nem copiar o `.env` manualmente. Os scripts `./setup.sh`, `./config.sh` e `./start.sh` criam o arquivo automaticamente na primeira execução, a partir de `.env.example`, quando ele ainda não existir.
 
-```bash
-cp .env.example .env
-```
-
-O `.env` referencia os caminhos dos módulos irmãos (`DSP_BACKEND_PATH`, `DSP_FRONTEND_PATH`, `DSP_JOB_MIGRATION_PATH`) — os defaults já assumem a estrutura de pastas da opção B do Passo 1.
+O `.env` referencia os caminhos dos módulos irmãos (`DSP_BACKEND_PATH`, `DSP_FRONTEND_PATH`, `DSP_JOB_MIGRATION_PATH`) — os defaults já assumem a estrutura de pastas da opção B do Passo 1. Só edite o `.env` depois que ele existir, se precisar ajustar portas ou paths antes de subir a stack.
 
 ## Passo 3 — Rodar o setup em modo demo
 

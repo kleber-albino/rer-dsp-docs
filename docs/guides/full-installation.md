@@ -19,7 +19,7 @@ Este guia é voltado a um **administrador de infraestrutura** responsável por c
 
 ```mermaid
 flowchart LR
-  r["Passo 1<br/>Organizar os repositórios"] --> e["Passo 2<br/>Configurar o core (.env)"]
+  r["Passo 1<br/>Organizar os repositórios"] --> e["Passo 2<br/>Entrar no rer-dsp-core"]
   e --> a["Passo 3<br/>./config.sh (wizard)"]
   a --> b["gera adopter-config.yaml<br/>e arquivos operacionais"]
   b --> c["Passo 4<br/>./setup.sh (opção 2 ou 3)"]
@@ -59,18 +59,17 @@ DSP/
 └── rer-dsp-job-data-migration/
 ```
 
-Esse layout é o esperado por padrão pelos scripts do core (`../rer-dsp-backend`, `../rer-dsp-frontend`, `../rer-dsp-job-data-migration`). Se preferir outra organização de pastas, ajuste os paths no Passo 2 (`DSP_BACKEND_PATH`, `DSP_FRONTEND_PATH`, `DSP_JOB_MIGRATION_PATH`).
+Esse layout é o esperado por padrão pelos scripts do core (`../rer-dsp-backend`, `../rer-dsp-frontend`, `../rer-dsp-job-data-migration`). Se preferir outra organização de pastas, ajuste os paths no `.env` depois que ele for criado (`DSP_BACKEND_PATH`, `DSP_FRONTEND_PATH`, `DSP_JOB_MIGRATION_PATH`).
 
-### Passo 2 — Configurar o core
-
-Dentro de `rer-dsp-core`, o `.env` é criado automaticamente na primeira execução de `./config.sh` ou `./setup.sh` a partir de `.env.example`. Opcionalmente, copie e ajuste manualmente:
+### Passo 2 — Entrar no core
 
 ```bash
 cd rer-dsp-core
-cp .env.example .env
 ```
 
-Nesse momento vale revisar pelo menos: portas que serão expostas no host (se as [padrão](#requisitos-de-infraestrutura) colidirem com algo já em uso), credenciais dos 3 bancos, e os paths dos repositórios irmãos caso não tenha seguido o layout do Passo 1. As demais variáveis relacionadas ao adotante (fonte JDBC, modo de migração, CORS) são preenchidas no Passo 3 pelo wizard — não é necessário editá-las manualmente aqui.
+Não é necessário criar nem copiar o `.env` manualmente. O arquivo é gerado automaticamente na primeira execução de `./config.sh` ou `./setup.sh`, a partir de `.env.example`, quando ainda não existir.
+
+Se precisar personalizar portas, credenciais dos 3 bancos ou paths dos repositórios irmãos antes de subir a stack, edite o `.env` **depois** que um desses scripts o criar. As variáveis do adotante (fonte JDBC, SRID, modo de migração) são preenchidas no Passo 3 pelo wizard — não é necessário editá-las manualmente no `.env`.
 
 ### Passo 3 — `./config.sh`
 
