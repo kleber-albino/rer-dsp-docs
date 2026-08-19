@@ -51,7 +51,7 @@ Definidas com valores default em `src/main/resources/application.properties`.
 
 | Endpoint | Descrição |
 |----------|-----------|
-| `GET /config/installation` | Configuração de instalação: hierarquia, telas, KPIs |
+| `GET /config/installation` | Configuração de instalação: hierarquia, telas, KPIs e `screens.home.detail.fields` |
 | `GET /geoServices/getRegions` | Lista de regiões |
 | `GET /state/getAll` | Lista de estados |
 | `GET /state/getCitiesByUf/{idState}` | Cidades por estado |
@@ -82,6 +82,19 @@ Os **dados** territoriais (unidades L1/L2/L3) ficam nas tabelas `dsp.territory_l
 Formatos aceitos: `classpath:installationConfig.json` (default), `file:/etc/dsp/installationConfig.json`, ou caminho absoluto no disco.
 
 O frontend consome `GET /config/installation` para montar filtros, títulos de tela e cards de KPI. A configuração é carregada uma vez e fica em cache na memória do backend — após mudar o arquivo, é necessário reiniciar a aplicação.
+
+`screens.home.detail.fields` é a lista exclusiva da ficha da AOI (ordem preservada). Cada item tem `field` (nome da coluna no destino, ou chave `calculated.*`) e `label`. Lista vazia ou ausente: a API devolve `[]` e o detalhe devolve `attributes: {}` — a UI atual continua no DTO estrutural. Lista não vazia: o detalhe resolve `attributes` com exatamente essas chaves.
+
+![Ficha da AOI com fallback do DTO estrutural](../assets/images/aoi-detail-fallback.png)
+
+Chaves de `field`:
+
+- Colunas da migração da AOI: `id`, `registration_date`, `updated_at`, `area`, e extras de `persist_columns` (ex. `nome`, `latitude`).
+- Calculados na aplicação (não são coluna): `calculated.latitude`, `calculated.longitude`, `calculated.territory_level_2_name`, `calculated.territory_level_3_name`.
+
+`GET /totalizer/getDeatilsByIdentifier/{identifier}` e `GET /totalizer/getDetailsByCoordinates` devolvem o DTO estrutural (compatível com o front atual: `latitude`/`longitude` do centróide, `territory`, `alterationDate`, etc.) **e** o mapa `attributes`. A chave em `attributes` é a mesma de `fields[].field` (não camelCase). Datas em `attributes` usam `yyyy-MM-dd`. `otherIds` e o download não entram em `attributes`.
+
+A coluna física de última alteração no `dsp-db` e no WFS é `updated_at`. O JSON estrutural do detalhe mantém `alterationDate`; em `attributes` a chave é `updated_at`.
 
 Estrutura do JSON:
 
@@ -149,7 +162,7 @@ Exemplo com modo planet:
 | Bloco | Função |
 |-------|--------|
 | `hierarchy` | Labels e placeholders dos níveis `level1` / `level2` / `level3` — as **chaves** são estáveis (batem com `GET /territory/options?level=…`); altere o `label`, não a `key` |
-| `screens.home` / `screens.downloads` | Quais níveis cada tela usa e textos dos campos |
+| `screens.home` / `screens.downloads` | Quais níveis cada tela usa e textos dos campos. Em `screens.home.detail.fields`, a lista exclusiva da ficha da AOI (`field` + `label`) |
 | `kpis` | Cards da home (rótulos, unidades, cores) |
 | `map.initialView` | Modo de abertura/reset do mapa na Home. `mode` obrigatório: `territorial_bbox` (enquadra via `GET /territory/boundary-box`; se nenhum nível territorial L1/L2/L3 estiver configurado no ETL, o `./config.sh` grava `planet` explicitamente), `manual` (exige `latitude`, `longitude`, `zoom`) ou `planet` (sempre centro `[0,0]` zoom `0`) |
 | `areaOfInterest` | Unidade/rótulo da área do imóvel — a área em si vem migrada da origem, o DSP não a calcula nem converte unidade |
@@ -166,10 +179,10 @@ O catálogo de temas de download vem de `downloadThemesConfig.json`, gerado pelo
 1. Valida território (nível 2 obrigatório, nível 3 opcional) no `dsp-db`.
 2. Monta filtro CQL por tema.
 3. Consulta o **GeoServer Download** via WFS (`GetFeature` com `resultType=hits` na busca; `outputFormat=csv` no download) em `DSP_GEOSERVER_WFS_BASE_URL`.
-4. Para temas com feições no recorte, consulta `alteration_date` via WFS (`sortBy`, `count=1`) e preenche `lastUpdate` na resposta.
+4. Para temas com feições no recorte, consulta `updated_at` via WFS (`sortBy`, `count=1`) e preenche `lastUpdate` na resposta.
 5. Devolve status ou bytes CSV ao frontend — o browser não acessa o GeoServer para arquivos de download.
 
-Se `alteration_date` faltar no WFS, a busca continua OK e `lastUpdate` fica `null` (UI exibe `—`).
+Se `updated_at` faltar no WFS, a busca continua OK e `lastUpdate` fica `null` (UI exibe `—`).
 
 ## Integração com os demais módulos
 

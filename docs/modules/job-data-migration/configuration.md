@@ -244,6 +244,8 @@ batch:
     end-date: 2024-12-31
 ```
 
+A data de atualização no **destino** da AOI é sempre `updated_at` (constante do job). `updated-at-column` no YAML é o nome **na origem**. A lista `installation.screens.detail.fields` (ficha da UI) **não** entra no `application.yaml` — fica só no `installation-config.json`.
+
 !!! warning "PRIMARY KEY no destino"
     A coluna mapeada da PK **deve** ser PRIMARY KEY (ou unique) no target. Caso contrário: *no unique or exclusion constraint matching the ON CONFLICT specification*.
 

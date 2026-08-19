@@ -60,13 +60,15 @@ O mapa da Home usa o pacote compartilhado [`@rural-environmental-registry/map_co
 
 O componente de mapa consome `/map/getBaseMaps` e `/map/getLayers` e integra o GeoServer Exhibition (WMS/WFS) via o pacote `map_component`. A orquestração de negócio (filtros, clique no mapa → detalhe do imóvel) fica no frontend do DSP, não no pacote em si.
 
+Na ficha da Home, `screens.home.detail.fields` (via `GET /config/installation`) define os campos e a ordem. Os valores vêm de `attributes` no detalhe. Lista vazia ou ausente: os 8 campos atuais do DTO estrutural. Download e “outros próximos” ficam fora dessa lista.
+
 ## Integração com o backend
 
 Endpoints consumidos pelo frontend:
 
 | Endpoint | Uso |
 |----------|-----|
-| `GET /config/installation` | Labels, hierarquia, telas, KPIs |
+| `GET /config/installation` | Labels, hierarquia, telas, KPIs e `screens.home.detail.fields` |
 | `GET /downloads/themes` | Temas de download |
 | `POST /downloads/search` | Busca de itens por hierarquia/tema |
 | `GET /downloads/file` | Download de arquivo CSV via backend |
