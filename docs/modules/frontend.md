@@ -43,11 +43,11 @@ O mecanismo de runtime config via `public/config/env.json` permite trocar a URL 
 
 ## Telas principais
 
-| Tela | Conteúdo |
-|------|----------|
-| Home | Busca/hierarquia territorial + KPIs + mapa |
-| Geoservices | Camadas geoespaciais |
-| About | Informações institucionais |
+| Tela | Conteúdo                                                                                                                                                                                                                                                        |
+|------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| Home | Busca/hierarquia territorial + KPIs + mapa                                                                                                                                                                                                                      |
+| Geoservices | Camadas geoespaciais                                                                                                                                                                                                                                            |
+| About | Conteúdo configurável pelo adotante — banner e abas vêm de `GET /config/about` (`aboutService.ts`) e são renderizados como Markdown (`marked` + `DOMPurify`, via `renderMarkdown.ts`); se desabilitada na configuração, a seção de abas  e o menu são ocultados |
 
 ## Componente de mapa
 

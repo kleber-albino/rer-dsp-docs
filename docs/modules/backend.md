@@ -43,6 +43,8 @@ Definidas com valores default em `src/main/resources/application.properties`.
 | `DSP_INSTALLATION_CONFIG_FILE` | Caminho do JSON de configuração de instalação |
 | `DSP_MAP_LAYERS_FILE` | Caminho do JSON de camadas de mapa |
 | `DSP_DOWNLOAD_THEMES_FILE` | Caminho do JSON de temas de download (`downloadThemesConfig.json`) |
+| `DSP_ABOUT_CONFIG_FILE` | Caminho do JSON de índice da página About (`about-config.json`) |
+| `DSP_ABOUT_CONTENT_DIR` | Caminho da pasta com os arquivos Markdown das abas da página About |
 | `DSP_GEOSERVER_WFS_BASE_URL` | URL base WFS do GeoServer Download para exportação de downloads |
 | `SPRING_DATASOURCE_URL` / `SPRING_DATASOURCE_USERNAME` / `SPRING_DATASOURCE_PASSWORD` | Conexão com `dsp-db` |
 | `SPRING_JPA_HIBERNATE_DDL_AUTO` | Gestão de schema (manter `none`) |
@@ -57,6 +59,7 @@ Definidas com valores default em `src/main/resources/application.properties`.
 | `GET /state/getCitiesByUf/{idState}` | Cidades por estado |
 | `GET /state/getUfsByRegion/{region}` | Estados por região |
 | `GET /downloads/themes` | Temas disponíveis para download (catálogo em `downloadThemesConfig.json`) |
+| `GET /config/about` | Conteúdo configurável da página About: `enabled`, `bannerTitle`, `defaultTabId` e `tabs[]` (`id`, `label`, `content` em Markdown) |
 | `POST /downloads/search` | Busca itens por hierarquia/tema (nível 2 obrigatório, nível 3 opcional) |
 | `GET /downloads/file` | Download de arquivo CSV via proxy WFS |
 | `GET /map/getBaseMaps` | Mapas base configurados |
@@ -183,6 +186,20 @@ O catálogo de temas de download vem de `downloadThemesConfig.json`, gerado pelo
 5. Devolve status ou bytes CSV ao frontend — o browser não acessa o GeoServer para arquivos de download.
 
 Se `updated_at` faltar no WFS, a busca continua OK e `lastUpdate` fica `null` (UI exibe `—`).
+
+## Configuração da página About
+
+O conteúdo institucional da página About pode ser configurado pelo adotante via arquivo de índice + Markdown, no mesmo padrão da configuração de instalação.
+
+| Item | Valor |
+|------|--------|
+| Propriedade (índice) | `dsp.about-config.config-file`, default `file:../rer-dsp-core/config/about/about-config.json` |
+| Propriedade (conteúdo) | `dsp.about-config.content-dir`, default `file:../rer-dsp-core/config/about/` |
+| Variáveis de ambiente | `DSP_ABOUT_CONFIG_FILE`, `DSP_ABOUT_CONTENT_DIR` |
+
+`AboutConfigService` lê o JSON de índice (`file:`/`classpath:`/caminho puro) e, para cada aba, lê o `.md` correspondente dentro de `contentDir`, montando a resposta; o resultado fica em cache. Se `enabled=false` no índice ou o arquivo de índice não existir, a resposta volta com `enabled=false` e `tabs` vazia — a aplicação não derruba por isso. JSON malformado ou `.md` referenciado ausente resultam em erro 500 (mesmo padrão do `InstallationConfigService`).
+
+`GET /config/about` é exposto por `AboutController`/`AboutApi` e devolve `AboutConfigResponse` (`enabled`, `bannerTitle`, `defaultTabId`, `tabs: [{ id, label, content }]`), onde `content` já é o Markdown lido do arquivo correspondente.
 
 ## Integração com os demais módulos
 
