@@ -73,7 +73,9 @@ Se precisar personalizar portas, credenciais dos 3 bancos ou paths dos repositó
 
 ### Passo 3 — `./config.sh`
 
-Wizard interativo em 5 estágios que gera `config/adopter/adopter-config.yaml` e, a partir dele, os arquivos operacionais JSON/YAML consumidos pelos demais módulos (configuração de instalação do backend, camadas de mapa, `application.yaml` do job de migração). Cada pergunta explica o campo e seu impacto antes de pedir o valor; você também pode editar o `adopter-config.yaml` diretamente, sem passar pelo wizard. Se um `adopter-config.yaml` já existir, o script oferece reaplicar, editar (reabre o wizard com os valores atuais) ou recomeçar do template. Detalhamento estágio a estágio: [rer-dsp-core](../modules/core.md#configsh).
+Wizard interativo em 5 estágios que gera `config/adopter/adopter-config.yaml` e, a partir dele, os arquivos operacionais JSON/YAML consumidos pelos demais módulos (configuração de instalação do backend, camadas de mapa, catálogo de temas de download, `application.yaml` do job de migração). Cada pergunta explica o campo e seu impacto antes de pedir o valor; você também pode editar o `adopter-config.yaml` diretamente, sem passar pelo wizard. Se um `adopter-config.yaml` já existir, o script oferece reaplicar, editar (reabre o wizard com os valores atuais) ou recomeçar do template.
+
+Depois dos 5 estágios, o wizard ainda pergunta se você quer habilitar a página About customizada do frontend — título do banner, quantidade de abas e, para cada aba, título e arquivo `.md` (em `config/about/`) — gerando `config/about/about-config.json`. Detalhamento estágio a estágio: [rer-dsp-core](../modules/core.md#configsh).
 
 ### Passo 4 — `./setup.sh`
 
