@@ -30,14 +30,14 @@ O `rer-dsp-frontend` é a interface web do DSP: busca por hierarquia territorial
 | `npm run build` | Type-check + build de produção (Vite) |
 | `npm run test` / `npm run coverage` | Testes com Vitest |
 
-Docker: build multi-stage, servido por nginx:alpine em `/dsp/`, porta 8080 no container (8081 no host via docker-compose do core).
+Docker: build multi-stage, servido por nginx:alpine em `/dsp/`, porta 8080 no container. Não publica porta no host — o acesso externo passa pelo gateway do core, em `/dsp/`.
 
 ## Variáveis de ambiente
 
 | Variável | Função |
 |----------|--------|
 | `VITE_BASE_URL` | Base path da aplicação (default `/dsp/`) |
-| `VITE_DSP_API_URL` | URL do backend. Se ausente no build, o valor é lido em runtime de `public/config/env.json` (campo `urlBackend`) |
+| `VITE_DSP_API_URL` | URL do backend (default `/dsp-backend`, path relativo resolvido pelo gateway na mesma origem). Se ausente no build, o valor é lido em runtime de `public/config/env.json` (campo `urlBackend`) |
 
 O mecanismo de runtime config via `public/config/env.json` permite trocar a URL do backend **sem rebuildar** a imagem — basta montar um arquivo diferente por volume/ConfigMap.
 

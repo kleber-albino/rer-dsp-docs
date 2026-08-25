@@ -12,7 +12,7 @@ Este guia é voltado a um **administrador de infraestrutura** responsável por c
 | Git           | se os repositórios irmãos ainda não estiverem clonados; os scripts podem cloná-los automaticamente                       |
 | Docker        | 24+ com Compose v2                                                                                                              |
 | Python        | Python 3 (usado pelo wizard `./config.sh`)                                                                                     |
-| Portas usadas | Frontend `22667`, Backend `22666`, GeoServer Exhibition `22668`, GeoServer Download `22669`, DSP DB `20654`, Job migration DB `20655`, GeoServer DB `20656` |
+| Portas usadas | Gateway `8026` (todo o tráfego HTTP), DSP DB `20654`, Job migration DB `20655`, GeoServer DB `20656` |
 | Armazenamento | Volumes persistentes para os 3 bancos Postgres/PostGIS (dsp-db, dsp-geoserver-db, dsp-job-migration-db)              |
 
 ## Fluxo de instalação
@@ -87,17 +87,27 @@ Escolha a opção adequada ao seu momento:
 
 ### Passo 5 — `./start.sh`
 
-Usado após a instalação inicial. Verifica os repositórios irmãos, garante as configurações de instalação/mapa, sobe os bancos (mantendo a stack de migração ativa se o modo for `continuous`), garante os GeoServers Exhibition e Download no ar e builda/sobe backend + frontend. A publicação das camadas nos GeoServers é feita pelo `./setup.sh`; o start apenas assegura que os containers estão ligados (sem rebuild forçado). **Nunca** roda migração — isso é sempre feito pelo `./setup.sh`.
+Usado após a instalação inicial. Verifica os repositórios irmãos, garante as configurações de instalação/mapa, sobe os bancos (mantendo a stack de migração ativa se o modo for `continuous`), garante os GeoServers Exhibition e Download no ar, builda/sobe backend + frontend e por último sobe o gateway. A publicação das camadas nos GeoServers é feita pelo `./setup.sh`; o start apenas assegura que os containers estão ligados (sem rebuild forçado). **Nunca** roda migração — isso é sempre feito pelo `./setup.sh`.
+
+Ao final, a stack fica acessível em uma única porta:
+
+| Serviço | URL |
+|---------|-----|
+| Frontend | `http://localhost:8026/dsp/` |
+| Backend API | `http://localhost:8026/dsp-backend` |
+| GeoServer Exhibition | `http://localhost:8026/geoserver-exhibition/web/` |
+| GeoServer Download | `http://localhost:8026/geoserver-download/web/` |
+| Health do gateway | `http://localhost:8026/gateway/health` |
 
 Detalhamento completo de cada opção e sub-fluxo: [rer-dsp-core](../modules/core.md#os-tres-scripts).
 
 ## O que não está incluído
 
-!!! warning "Reverse proxy / gateway"
-    O core **não** inclui um reverse proxy ou API gateway na frente dos serviços. Isso fica a cargo do adotante — normalmente um Nginx, Traefik ou balanceador de carga apontando para as portas do frontend, backend e GeoServers (Exhibition e Download).
-
 !!! warning "HTTPS / TLS"
-    Não há terminação TLS embutida na stack do core. A responsabilidade de expor os serviços via HTTPS (certificados, renovação, etc.) é do adotante, tipicamente no mesmo componente de reverse proxy.
+    Não há terminação TLS embutida na stack do core. O gateway responde em HTTP. A responsabilidade de expor os serviços via HTTPS (certificados, renovação, etc.) é do adotante — o gateway é o ponto natural para fazer isso, seja configurando TLS nele ou colocando um balanceador de carga na frente.
+
+!!! warning "Balanceamento e alta disponibilidade"
+    O gateway é um container único, sem réplicas. Distribuir carga entre múltiplas instâncias da stack fica a cargo do adotante.
 
 
 ## Variáveis de ambiente

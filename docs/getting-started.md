@@ -75,7 +75,7 @@ Esse passo cria os containers Docker, sobe os bancos (dsp-db, dsp-geoserver-db) 
 ./start.sh
 ```
 
-Sobe backend, frontend sem remigrar os dados.
+Sobe backend, frontend e o gateway sem remigrar os dados.
 
 ## Passo 5 — Acessar o sistema
 
@@ -85,12 +85,17 @@ Com todos os componentes no ar, acesse o frontend para ver a demo funcionando:
 
 ## URLs da demo
 
+Tudo entra pela mesma porta, servida pelo gateway nginx:
+
 | Serviço | URL |
 |---------|-----|
-| Frontend | http://localhost:22667/dsp/ |
-| Backend API (Swagger UI) | http://localhost:22666/dsp-backend/swagger-ui.html |
-| GeoServer Exhibition | http://localhost:22668/geoserver/web/ |
-| GeoServer Download | http://localhost:22669/geoserver/web/ |
+| Frontend | http://localhost:8026/dsp/ |
+| Backend API (Swagger UI) | http://localhost:8026/dsp-backend/swagger-ui.html |
+| GeoServer Exhibition | http://localhost:8026/geoserver-exhibition/web/ |
+| GeoServer Download | http://localhost:8026/geoserver-download/web/ |
+
+!!! tip "Porta 8026 já em uso?"
+    Se algo já ocupa a porta 8026 na sua máquina, ajuste `DSP_GATEWAY_HOST_PORT` e `DSP_PUBLIC_BASE_URL` no `.env` (por exemplo `9026` e `http://localhost:9026`), rode `./config.sh` para regenerar as URLs de WMS/WFS e suba de novo com `./start.sh`.
 
 ## Próximos passos
 
