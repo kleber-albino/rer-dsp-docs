@@ -93,7 +93,7 @@ O YAML do adotante (`config/adopter/adopter-config.yaml` / `.yaml.example`) tem 
 
 `apply_config()` gera `config/about/about-config.json` a partir dessas respostas, no mesmo padrão (`json.dumps(..., ensure_ascii=False, indent=2)`) usado para os demais arquivos operacionais.
 
-O `docker-compose.yml` monta `./config/about:/config/about:ro` no serviço `dsp-backend`, que também recebe as variáveis `DSP_ABOUT_CONFIG_FILE` (default `file:/config/about/about-config.json`) e `DSP_ABOUT_CONTENT_DIR` (default `file:/config/about/`) — ambas documentadas em `.env.example` no mesmo padrão de `DSP_INSTALLATION_CONFIG_FILE`.
+O wizard gera `config/about/about-config.json` e os Markdown das abas. Esses arquivos são **copiados para a imagem** do `dsp-backend` no `docker compose build` (caminho `/config/about/`). As variáveis `DSP_ABOUT_CONFIG_FILE` (default `file:/config/about/about-config.json`) e `DSP_ABOUT_CONTENT_DIR` (default `file:/config/about/`) apontam para esses caminhos **dentro do container** — ambas documentadas em `.env.example` no mesmo padrão de `DSP_INSTALLATION_CONFIG_FILE`. Depois de `./config.sh`, rode `./setup.sh` ou `./start.sh` para rebuildar as imagens.
 
 ### `./setup.sh`
 
@@ -195,10 +195,14 @@ flowchart LR
   apply --> downloadJson["downloadThemesConfig.json"]
   apply --> aboutJson["about-config.json"]
   apply --> appYaml["application.yaml"]
-  downloadJson --> backendVol["volume dsp-backend"]
-  aboutJson --> backendVol
-  mapJson --> geoserverExVol["volume GeoServer Exhibition"]
-  mapJson --> geoserverDlVol["volume GeoServer Download"]
+  installJson --> build["docker compose build"]
+  mapJson --> build
+  downloadJson --> build
+  aboutJson --> build
+  appYaml --> build
+  build --> backendImg["imagem dsp-backend /config"]
+  build --> geoserverImg["imagens GeoServer /config"]
+  build --> jobImg["imagem dsp-job-migration /config"]
 ```
 
 - **`./config.sh`** — ponto de entrada do adotante; reaplica, edita ou recria o `adopter-config.yaml` e dispara a geração dos JSON/YAML.
@@ -208,7 +212,9 @@ flowchart LR
 - **`downloadThemesConfig.json`** — catálogo de temas de download derivado de `area_of_interest` + `etl.layers[]` (`DSP_DOWNLOAD_THEMES_FILE` no backend); `typeName`s alinhados às camadas do GeoServer Download (`wfsBaseUrl` em `localhost:22669`).
 - **`about-config.json`** — índice da página About: `enabled`, `banner_title`, `default_tab_id` e `tabs` (lista de `{id, label, file}`, cada `file` um Markdown em `config/about/`) (`DSP_ABOUT_CONFIG_FILE` no backend).
 - **`application.yaml`** — plano de migração ETL (tabelas, colunas, camadas genéricas).
-- **Volume `dsp-backend`** — monta `installation-config.json`, `mapLayersConfig.json`, `downloadThemesConfig.json` e a pasta `config/about/` (índice + Markdown das abas) no container da API.
-- **Volumes GeoServer Exhibition e Download** — montam o mesmo `mapLayersConfig.json` para publicação a partir do `geoserver-db`.
+- **Imagem `dsp-backend`** — no build, copia `installation-config.json`, `mapLayersConfig.json`, `downloadThemesConfig.json` e a pasta `about/` para `/config` no container.
+- **Imagens GeoServer Exhibition e Download** — no build, copiam o mesmo `mapLayersConfig.json` para `/config`.
+- **Imagem `dsp-job-migration`** — no build, copia `application.yaml` e o entrypoint para o container.
+- **Imagens dos bancos** — o SQL de init (`config/db/dsp-*`) é copiado para `/docker-entrypoint-initdb.d` na imagem; volumes nomeados guardam só os dados.
 
 Veja também: [Fluxo de dados](../architecture/data-flow.md) (runtime) e [rer-dsp-backend](backend.md) (variáveis de ambiente de downloads).

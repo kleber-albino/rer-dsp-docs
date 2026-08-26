@@ -91,7 +91,7 @@ psql -h localhost -p 6666 -U postgres -d batch_metadata \
 ```
 
 !!! note "Duas cópias do mesmo schema"
-    O `rer-dsp-core` também mantém uma cópia deste schema (`config/db/dsp-job-migration-db/01_spring_batch_schema.sql`), usada para inicializar o banco automaticamente no fluxo orquestrado via Docker. As duas cópias existem porque servem consumidores diferentes — orquestrado (core) vs. standalone (este módulo) — e precisam ser mantidas em sincronia manualmente se eventualmente o schema do Spring Batch mudar.
+    O `rer-dsp-core` também mantém uma cópia deste schema (`config/db/dsp-job-migration-db/01_spring_batch_schema.sql`). No fluxo orquestrado, esse SQL é **copiado para a imagem** de `dsp-job-migration-db` (`/docker-entrypoint-initdb.d`) e o Postgres aplica na primeira inicialização do volume. As duas cópias existem porque servem consumidores diferentes — orquestrado (core) vs. standalone (este módulo) — e precisam ser mantidas em sincronia manualmente se eventualmente o schema do Spring Batch mudar.
 
 Conferir:
 

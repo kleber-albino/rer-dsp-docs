@@ -203,7 +203,7 @@ O conteúdo institucional da página About pode ser configurado pelo adotante vi
 
 ## Integração com os demais módulos
 
-- Depende do **core** para o schema `dsp` no Postgres e para os arquivos externos `installationConfig.json` e `mapLayersConfig.json`.
+- Depende do **core** para o schema `dsp` no Postgres e para os arquivos `installationConfig.json` e `mapLayersConfig.json` (no fluxo orquestrado, copiados para `/config` na imagem no build).
 - É consumido pelo **frontend** via API REST (`VITE_DSP_API_URL`).
 - Lê exclusivamente o banco **dsp-db** — nunca acessa `geoserver-db` diretamente.
 - Consulta o **GeoServer Download** via HTTP/WFS para downloads de arquivo.
