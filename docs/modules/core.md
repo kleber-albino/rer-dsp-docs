@@ -4,7 +4,7 @@ Este módulo é parte do [DSP](../index.md) — veja a documentação completa e
 
 ## Objetivo
 
-O `rer-dsp-core` é o hub de orquestração Docker Compose do DSP. Ele **não contém código de aplicação/domínio** — sua responsabilidade é preparar e subir a infraestrutura (bancos, GeoServer) e orquestrar o build dos demais módulos.
+O `rer-dsp-core` é o hub de orquestração Docker Compose do DSP. Ele **não contém código de aplicação/domínio** — sua responsabilidade é preparar e subir a infraestrutura (bancos, GeoServer, gateway) e orquestrar o build dos demais módulos.
 
 ```mermaid
 flowchart TD
@@ -13,11 +13,13 @@ flowchart TD
   fe["rer-dsp-frontend"]
   job["rer-dsp-job-data-migration"]
   gs["2 GeoServers + 3 bancos Postgres/PostGIS"]
+  gw["dsp-gateway (nginx)"]
 
   core --> be
   core --> fe
   core --> job
   core --> gs
+  core --> gw
 ```
 
 ## Responsabilidades
@@ -26,6 +28,7 @@ flowchart TD
 - Conteúdo de exemplo da página About (`config/about/`).
 - SQL de inicialização dos bancos.
 - GeoServer Exhibition (mapa) e GeoServer Download (WFS de exportação).
+- Gateway nginx (`dsp-gateway`) como porta de entrada única da stack.
 - Três scripts operacionais: `./config.sh`, `./setup.sh`, `./start.sh`.
 - Clone automático dos repositórios irmãos quando ausentes (com preview da estrutura de pastas antes da confirmação).
 
@@ -125,17 +128,20 @@ Ao final de qualquer opção real (2 ou 3), o script também publica as camadas 
 2. Garante a configuração de instalação (`installationConfig.json`) e de camadas de mapa.
 3. Sobe os bancos (sem migração) e, se `DSP_MIGRATION_EXECUTION_MODE=continuous`, mantém também a stack de migração ativa.
 4. Garante o GeoServer Exhibition e o GeoServer Download no ar (sem rebuild forçado nem republicação de camadas — isso fica no `./setup.sh`) e builda/sobe os containers `dsp-backend` e `dsp-frontend`.
-5. Imprime um resumo da stack e as URLs de cada serviço.
+5. Sobe o `dsp-gateway` e espera o health responder.
+6. Imprime um resumo da stack e as URLs de cada serviço.
 
 ## Bancos e GeoServer
 
-| Serviço | Porta local | Papel |
+Só os bancos publicam porta no host. Os serviços HTTP ficam acessíveis apenas pelo gateway.
+
+| Serviço | Acesso | Papel |
 |---------|--------------|-------|
-| dsp-db | 20654 | Banco operacional — negócio + bbox/centroid |
-| Job migration DB (dsp-job-migration-db) | 20655 | Metadados Spring Batch (`BATCH_*`) |
-| GeoServer DB (dsp-geoserver-db) | 20656 | Geometria completa `dsp.*` |
-| GeoServer Exhibition | 22668 | WMS/WFS de mapa a partir do geoserver-db |
-| GeoServer Download | 22669 | WFS de downloads (consumido pelo backend) |
+| dsp-db | porta 20654 | Banco operacional — negócio + bbox/centroid |
+| Job migration DB (dsp-job-migration-db) | porta 20655 | Metadados Spring Batch (`BATCH_*`) |
+| GeoServer DB (dsp-geoserver-db) | porta 20656 | Geometria completa `dsp.*` |
+| GeoServer Exhibition | via gateway, `/geoserver-exhibition/` | WMS/WFS de mapa a partir do geoserver-db |
+| GeoServer Download | via gateway, `/geoserver-download/` | WFS de downloads (consumido pelo backend) |
 
 ## Fluxo dual-write
 
@@ -151,14 +157,59 @@ flowchart LR
   be -->|WFS downloads| gsDl
 ```
 
+## Gateway (`dsp-gateway`)
+
+Container nginx que é a porta de entrada única da stack. Frontend, backend e os dois GeoServers não
+publicam porta no host — tudo entra por `DSP_GATEWAY_HOST_PORT` (default `8026`).
+
+A configuração fica em `config/Gateway/nginx/default.conf.template` e é processada por `envsubst`
+quando o container sobe, substituindo apenas as variáveis `DSP_*`.
+
+| Rota externa | Destino interno |
+|--------------|-----------------|
+| `/` | redireciona para `/dsp/` |
+| `/dsp/` | `dsp-frontend:8080` |
+| `/dsp-backend/` | `dsp-backend:8080` (acompanha `DSP_BACKEND_CONTEXT_PATH`) |
+| `/geoserver-exhibition/` | `dsp-geoserver-exhibition:8080/geoserver/` |
+| `/geoserver-download/` | `dsp-geoserver-download:8080/geoserver/` |
+| `/gateway/health` | resposta local do nginx |
+
+Os dois GeoServers respondem em `/geoserver` internamente, então cada um recebe um prefixo externo
+próprio e um `rewrite`. Cada um também recebe `PROXY_BASE_URL` com a sua URL pública, para que os
+links do GetCapabilities e da interface web saiam corretos.
+
+Como o gateway resolve os upstreams em runtime pelo DNS do Docker, ele sobe mesmo com algum serviço
+parado — responde `502` em vez de falhar no boot. Isso é o que permite usar o modo demo do
+`./setup.sh`, que não sobe backend nem frontend.
+
+### Cache
+
+O cache já está configurado, mas vem **desligado**. Ele cobre apenas os endpoints WMS/WFS
+(`/geoserver-exhibition/<workspace>/wms`, `/wfs` e os equivalentes em `/geoserver-download/`), que não têm
+sessão — a UI web e a REST do GeoServer ficam de fora para não quebrar o login do admin.
+
+Para ligar, deixe `DSP_GATEWAY_CACHE_BYPASS` vazio no `.env` e recrie o container:
+
+```bash
+# .env
+DSP_GATEWAY_CACHE_BYPASS=
+DSP_GATEWAY_CACHE_TTL=10m
+
+docker compose --env-file .env up -d --force-recreate dsp-gateway
+```
+
+O header `X-Cache-Status` (`HIT`, `MISS`, `BYPASS`) sai em toda resposta dos GeoServers e serve para
+conferir o comportamento. Para limpar o cache, remova o volume `dsp_gateway_cache`.
+
 ## URLs padrão
 
 | Serviço | URL |
 |---------|-----|
-| Frontend | http://localhost:22667/dsp/ |
-| Backend API | http://localhost:22666/dsp-backend |
-| GeoServer Exhibition | http://localhost:22668/geoserver/web/ |
-| GeoServer Download | http://localhost:22669/geoserver/web/ |
+| Frontend | http://localhost:8026/dsp/ |
+| Backend API | http://localhost:8026/dsp-backend |
+| GeoServer Exhibition | http://localhost:8026/geoserver-exhibition/web/ |
+| GeoServer Download | http://localhost:8026/geoserver-download/web/ |
+| Health do gateway | http://localhost:8026/gateway/health |
 
 ## Variáveis de ambiente relevantes (`.env` do core)
 
@@ -172,9 +223,11 @@ Embora o assistente de configuração `./config.sh` elimine a necessidade de edi
 | `DSP_SOURCE_JDBC_USER` / `DSP_SOURCE_JDBC_PASSWORD` | Credenciais da fonte JDBC |
 | `DSP_MIGRATION_EXECUTION_MODE` | `once`: migra uma vez e desliga o container do job. `continuous`: mantém o container ativo e sincroniza automaticamente as mudanças da origem periodicamente |
 | Credenciais dos 3 bancos do core | Usuário/senha de dsp-db, dsp-geoserver-db e dsp-job-migration-db |
-| `DSP_GEOSERVER_WFS_BASE_URL` / `DSP_GEOSERVER_DOWNLOAD_HOST_PORT` | URL WFS do GeoServer Download (backend) e porta host `22669` |
-| `DSP_GEOSERVER_HOST_PORT` | Porta host do GeoServer Exhibition (`22668`) |
-| `DSP_CORS_ALLOWED_ORIGINS` | Origens permitidas no CORS do backend |
+| `DSP_GEOSERVER_WFS_BASE_URL` | URL WFS do GeoServer Download usada pelo backend — interna à rede Docker, não passa pelo gateway |
+| `DSP_GATEWAY_HOST_PORT` | Porta host do gateway (`8026`) — a única porta HTTP publicada |
+| `DSP_PUBLIC_BASE_URL` | URL pública da stack (`http://localhost:8026`). Alimenta o `PROXY_BASE_URL` dos GeoServers e as URLs WMS/WFS geradas pelo `./config.sh` |
+| `DSP_GATEWAY_CACHE_BYPASS` / `DSP_GATEWAY_CACHE_TTL` | Liga/desliga o cache do nginx e define o TTL |
+| `DSP_CORS_ALLOWED_ORIGINS` | Origens permitidas no CORS do backend. Pelo gateway o frontend chama a API na mesma origem, então isso cobre só o dev local |
 | `DSP_ABOUT_CONFIG_FILE` / `DSP_ABOUT_CONTENT_DIR` | Caminho do índice `about-config.json` e da pasta com os Markdown das abas da página About (default `file:/config/about/about-config.json` e `file:/config/about/`) |
 | Build args do frontend | `VITE_BASE_URL`, `VITE_DSP_API_URL` — definem base path e URL da API usadas no build da imagem |
 | `DSP_BACKEND_PATH` / `DSP_FRONTEND_PATH` / `DSP_JOB_MIGRATION_PATH` | Paths dos repositórios irmãos usados na orquestração de build |
@@ -209,7 +262,7 @@ flowchart LR
 - **`apply_adopter_config.py`** — traduz o YAML do adotante para os formatos consumidos por backend, frontend (via API), job de migração e GeoServers.
 - **`installation-config.json`** — labels, hierarquia, telas, KPIs e `screens.home.detail.fields` (lista exclusiva da ficha da AOI: colunas da **migração da AOI** e/ou `calculated.*`) (`DSP_INSTALLATION_CONFIG_FILE` no backend). Lista vazia ou omitida = fallback da ficha atual (8 campos do DTO). Esse array **não** é copiado para o `application.yaml` do job.
 - **`mapLayersConfig.json`** — grupos e camadas WMS do mapa (`DSP_MAP_LAYERS_FILE`); publicadas nos dois GeoServers pelo `populate_geoserver.sh`.
-- **`downloadThemesConfig.json`** — catálogo de temas de download derivado de `area_of_interest` + `etl.layers[]` (`DSP_DOWNLOAD_THEMES_FILE` no backend); `typeName`s alinhados às camadas do GeoServer Download (`wfsBaseUrl` em `localhost:22669`).
+- **`downloadThemesConfig.json`** — catálogo de temas de download derivado de `area_of_interest` + `etl.layers[]` (`DSP_DOWNLOAD_THEMES_FILE` no backend); `typeName`s alinhados às camadas do GeoServer Download (`wfsBaseUrl` em `${DSP_PUBLIC_BASE_URL}/geoserver-download`).
 - **`about-config.json`** — índice da página About: `enabled`, `banner_title`, `default_tab_id` e `tabs` (lista de `{id, label, file}`, cada `file` um Markdown em `config/about/`) (`DSP_ABOUT_CONFIG_FILE` no backend).
 - **`application.yaml`** — plano de migração ETL (tabelas, colunas, camadas genéricas).
 - **Imagem `dsp-backend`** — no build, copia `installation-config.json`, `mapLayersConfig.json`, `downloadThemesConfig.json` e a pasta `about/` para `/config` no container.

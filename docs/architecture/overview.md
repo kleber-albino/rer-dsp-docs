@@ -41,11 +41,14 @@ flowchart LR
   exdb[(geoserver-db)]
   gsEx[GeoServer Exhibition]
   gsDl[GeoServer Download]
+  gw["dsp-gateway<br/>nginx"]
+  browser[Browser]
 
   core -->|"sobe/configura"| dspdb
   core -->|"sobe/configura"| exdb
   core -->|"sobe"| gsEx
   core -->|"sobe"| gsDl
+  core -->|"sobe"| gw
   core -->|"orquestra build/config"| job
   core -->|"orquestra build/config"| be
   core -->|"orquestra build/config"| fe
@@ -56,13 +59,19 @@ flowchart LR
   exdb --> gsEx
   exdb --> gsDl
   dspdb --> be
-  be -->|REST| fe
   be -->|WFS downloads| gsDl
-  gsEx -->|WMS| fe
+
+  browser --> gw
+  gw -->|/dsp/| fe
+  gw -->|/dsp-backend/| be
+  gw -->|/geoserver-exhibition/| gsEx
+  gw -->|/geoserver-download/| gsDl
 
   classDef coreCls fill:#312e8122,color:#312e81,stroke:#4338ca,stroke-width:2px
   class core coreCls
 ```
+
+Todo o tráfego HTTP entra pelo **gateway**. Frontend, backend e os dois GeoServers não publicam porta no host — só os bancos continuam acessíveis diretamente, para inspeção e para a fonte do ETL.
 
 ---
 
@@ -121,7 +130,8 @@ flowchart TB
 
 | Camada | Componentes | Responsabilidade                                                                      |
 |--------|-------------|---------------------------------------------------------------------------------------|
-| Orquestração / configuração | [rer-dsp-core](https://github.com/Rural-Environmental-Registry/rer-dsp-core) | Sobe bancos, GeoServers e orquestra build/config dos demais módulos via Docker Compose |
+| Orquestração / configuração | [rer-dsp-core](https://github.com/Rural-Environmental-Registry/rer-dsp-core) | Sobe bancos, GeoServers, gateway e orquestra build/config dos demais módulos via Docker Compose |
+| Entrada HTTP | Gateway nginx (`dsp-gateway`, no core) | Porta de entrada única: roteia para frontend, backend e GeoServers; cache opcional |
 | Apresentação | [rer-dsp-frontend](https://github.com/Rural-Environmental-Registry/rer-dsp-frontend) | Interface web/mapas para consulta e compartilhamento                                  |
 | API | [rer-dsp-backend](https://github.com/Rural-Environmental-Registry/rer-dsp-backend) | Contratos REST, dados de negócio da plataforma                                        |
 | Integração / ETL | [rer-dsp-job-data-migration](https://github.com/Rural-Environmental-Registry/rer-dsp-job-data-migration) | Sincroniza atributos e geometria da fonte do adotante para os bancos do DSP           |
@@ -135,7 +145,7 @@ flowchart TB
 
 O `rer-dsp-core` não contém código de aplicação/domínio — sua responsabilidade é exclusivamente de **orquestração e configuração**:
 
-- Sobe os 3 bancos Postgres/PostGIS (dsp-db, dsp-geoserver-db, dsp-job-migration-db) e os dois GeoServers (Exhibition + Download) via Docker Compose.
+- Sobe os 3 bancos Postgres/PostGIS (dsp-db, dsp-geoserver-db, dsp-job-migration-db), os dois GeoServers (Exhibition + Download) e o gateway nginx via Docker Compose.
 - Gera, a partir do wizard `./config.sh`, o `adopter-config.yaml` e os arquivos operacionais consumidos pelo backend (`installationConfig.json`, `mapLayersConfig.json`) e pelo job de migração (`application.yaml`).
 - Orquestra o build e a subida do backend, frontend e job de migração.
 - Não tem dependência de runtime sobre os demais módulos — precisa deles apenas no momento do build/orquestração.
@@ -162,8 +172,8 @@ flowchart LR
 
 1. **Ingestão / sync** — job de migração faz dual-write: `dsp-db` (negócio + bbox/centroid) e `geoserver-db` (geometria completa).
 2. **Publicação** — GeoServer Exhibition e GeoServer Download leem **somente** `geoserver-db` (processos isolados).
-3. **Consumo via API** — backend lê `dsp-db` (sem polígonos completos) e consulta o **GeoServer Download** via WFS para downloads de arquivo.
-4. **Consumo via UI** — frontend consome a API do backend (busca, KPIs, downloads) e, para mapas, consome WMS/WFS do **GeoServer Exhibition** diretamente.
+3. **Consumo via API** — backend lê `dsp-db` (sem polígonos completos) e consulta o **GeoServer Download** via WFS para downloads de arquivo. Essa chamada é interna à rede Docker e não passa pelo gateway.
+4. **Consumo via UI** — frontend consome a API do backend (busca, KPIs, downloads) e, para mapas, consome WMS/WFS do **GeoServer Exhibition**. Tudo o que sai do browser passa pelo **gateway**, na mesma origem.
 
 !!! tip "Porque não gravar a geometria completa no `dsp-db`?"
     Em vez de guardar a geometria completa (o polígono inteiro, com todos os seus vértices) no `dsp-db`, o job grava apenas duas versões simplificadas dela:

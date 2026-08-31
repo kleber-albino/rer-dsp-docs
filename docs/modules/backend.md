@@ -30,7 +30,7 @@ O `rer-dsp-backend` é a API REST do DSP: expõe dados de negócio, hierarquia t
 ./gradlew bootRun
 ```
 
-Ou via Docker, orquestrado pelo `rer-dsp-core` — que oferece dois modos: [demo](../getting-started.md) (seed sintético, sem banco externo) ou [instalação real](../guides/full-installation.md) (dados do adotante via fonte JDBC).
+Ou via Docker, orquestrado pelo `rer-dsp-core` — que oferece dois modos: [demo](../getting-started.md) (seed sintético, sem banco externo) ou [instalação real](../guides/full-installation.md) (dados do adotante via fonte JDBC). No Docker o container não publica porta no host: a API é alcançada pelo gateway do core, em `/dsp-backend`.
 
 ## Variáveis de ambiente
 
@@ -38,8 +38,8 @@ Definidas com valores default em `src/main/resources/application.properties`.
 
 | Variável | Função |
 |----------|--------|
-| `SERVER_SERVLET_CONTEXT_PATH` | Context-path da API (default `/dsp-backend`) |
-| `DSP_CORS_ALLOWED_ORIGINS` | Origens permitidas no CORS |
+| `SERVER_SERVLET_CONTEXT_PATH` | Context-path da API (default `/dsp-backend`). O gateway usa o mesmo prefixo externamente, sem rewrite |
+| `DSP_CORS_ALLOWED_ORIGINS` | Origens permitidas no CORS. Pelo gateway o frontend chama a API na mesma origem; isso cobre consumidores externos e o dev local |
 | `DSP_INSTALLATION_CONFIG_FILE` | Caminho do JSON de configuração de instalação |
 | `DSP_MAP_LAYERS_FILE` | Caminho do JSON de camadas de mapa |
 | `DSP_DOWNLOAD_THEMES_FILE` | Caminho do JSON de temas de download (`downloadThemesConfig.json`) |
@@ -70,7 +70,7 @@ Definidas com valores default em `src/main/resources/application.properties`.
 | `GET /territory/options` | Opções de território por hierarquia |
 | `GET /territory/boundary-box` | Bounding box de território |
 
-Documentação interativa: Swagger UI em `{context-path}/swagger-ui.html`; OpenAPI JSON em `/api-docs`.
+Documentação interativa: Swagger UI em `{context-path}/swagger-ui.html`; OpenAPI JSON em `/api-docs`. Na stack do core, `http://localhost:8026/dsp-backend/swagger-ui.html`.
 
 ## Configuração de instalação (labels, telas, KPIs)
 
