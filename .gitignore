@@ -1,0 +1,24 @@
+# Ambiente Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.Python
+dist/
+build/
+
+# Build do Zensical
+site/
+.cache/
+
+# IDEs e editores
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Sistema operacional
+.DS_Store
+Thumbs.db
