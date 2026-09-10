@@ -1,11 +1,11 @@
 # Bancos de dados — contrato de papéis
 
-Contrato dos **quatro papéis** de datasource no fluxo de migração e consumo do DSP, após a separação geo.
+Contrato dos papéis de datasource no fluxo de migração, geração de arquivos e consumo do DSP.
 
 ## Sumário
 
 - [Visão geral](#visao-geral)
-- [Os quatro papéis](#os-quatro-papeis)
+- [Papéis de datasource](#papeis-de-datasource)
 - [Colunas geo por banco](#colunas-geo-por-banco)
 - [Quem lê e quem escreve](#quem-le-e-quem-escreve)
 - [Dual-write do job](#dual-write-do-job)
@@ -26,7 +26,6 @@ flowchart LR
   job[dsp-batch]
   dsp[(dsp-db<br/>operacional)]
   ex[(dsp-geoserver-db<br/>geometria completa)]
-  batch[(batch_metadata)]
   api[backend]
   gsEx[GeoServer Exhibition]
   gsDl[GeoServer Download]
@@ -34,7 +33,7 @@ flowchart LR
   src -->|read| job
   job -->|bbox + centroid| dsp
   job -->|geometry| ex
-  job -->|BATCH_*| batch
+  job -->|BATCH_* schema data_migration| dsp
   api -->|read| dsp
   api -->|WFS downloads| gsDl
   gsEx -->|read| ex
@@ -43,16 +42,19 @@ flowchart LR
 
 ---
 
-## Os quatro papéis
+## Papéis de datasource
 
-| Papel | Serviço / prefixo | Conteúdo |
-|-------|-------------------|----------|
-| **source** | Fora do Compose (`spring.datasource.source`) | Banco da organização — fonte da migração |
-| **dsp-db** | `dsp-db` · `spring.datasource.target` | Dados de negócio + `boundary_box` + `centroid_coordinates` — **sem** coluna de geometria completa |
-| **geoserver-db** | `dsp-geoserver-db` · `spring.datasource.geo-target` | Mesmas tabelas `dsp.*` **com** coluna `geometry` completa |
-| **batch** | `dsp-job-migration-db` · `spring.datasource.batch` | Metadados Spring Batch (`BATCH_*`) |
+São papéis de **conexão**, não containers extras. No core há dois serviços Postgres (`dsp-db` e `dsp-geoserver-db`). O papel `batch` é um schema de metadados Spring Batch **dentro** do `dsp-db` — um schema por job.
 
-Ambos os bancos de destino (`dsp-db` e `geoserver-db`) expõem o schema `dsp` com as mesmas tabelas lógicas (`territory_level_1`, `territory_level_2`, `territory_level_3`, `area_of_interest`), mas com colunas geo distintas conforme a seção abaixo.
+| Papel | Onde (fluxo orquestrado pelo core) | Para que serve |
+|-------|-------------------------------------|----------------|
+| **source** | Banco do adotante, fora do Compose (`spring.datasource.source`) | Origem da migração — só leitura |
+| **dsp-db** | Serviço `dsp-db`, schema `dsp` (`spring.datasource.target`) | Dados de negócio, `boundary_box` e `centroid_coordinates`. Sem geometria completa. É o que o backend consulta |
+| **geoserver-db** | Serviço `dsp-geoserver-db`, schema `dsp` (`spring.datasource.geo-target`) | As mesmas entidades territoriais, com a coluna `geometry` completa. É o que os GeoServers leem |
+| **batch** (migração) | Schema `data_migration` no `dsp-db` (`spring.datasource.batch` do job de migração) | Histórico Spring Batch da **migração**: tabelas `BATCH_*` e `BATCH_JOB_EXECUTION_SYNC_STATE` (watermark). Não mistura com o schema de negócio `dsp` |
+| **batch** (geo-file) | Schema `geo_file_generation` no `dsp-db` (`spring.datasource.batch` do job geo-file) | Histórico Spring Batch do **job geo-file**: tabelas `BATCH_*` (sem `SYNC_STATE`). Isolado da migração |
+
+`dsp-db` e `geoserver-db` repetem as tabelas lógicas (`territory_level_1`, `territory_level_2`, `territory_level_3`, `area_of_interest`). A diferença está nas colunas geo — ver a seção seguinte.
 
 ---
 
@@ -124,6 +126,7 @@ Instalações distintas podem usar SRIDs diferentes por "layer", desde que o YAM
 | source | `spring.datasource.source` | — (externo) |
 | dsp-db (target) | `spring.datasource.target` | `dsp-db` |
 | geoserver-db (geo-target) | `spring.datasource.geo-target` | `dsp-geoserver-db` |
-| batch | `spring.datasource.batch` | `dsp-job-migration-db` |
+| batch (migração) | `spring.datasource.batch` | `dsp-db`, schema `data_migration` |
+| batch (geo-file) | `spring.datasource.batch` | `dsp-db`, schema `geo_file_generation` |
 
 Detalhe operacional: [Job data-migration — Configuração e execução](../modules/job-data-migration/configuration.md) · validação: [Validação pós-migração](../modules/job-data-migration/validation.md) · orquestração dos bancos: [rer-dsp-core](../modules/core.md).

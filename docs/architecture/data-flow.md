@@ -35,7 +35,7 @@ sequenceDiagram
    - **GeoServer Exhibition** — WMS/WFS para navegação no mapa.
    - **GeoServer Download** — WFS usado só pelo backend nas exportações (CSV).
 4. **Backend serve a API a partir do dsp-db.** O `rer-dsp-backend` lê apenas `dsp-db` para dados de negócio; como esse banco não tem geometria completa, a API nunca expõe polígonos inteiros — apenas bounding box e centroide, além dos atributos operacionais.
-5. **Downloads passam pelo backend com proxy WFS no GeoServer Download.** A tela de Downloads consome `POST /downloads/search` e `GET /downloads/file`. O backend valida o território no `dsp-db`, consulta o GeoServer Download via WFS (`DSP_GEOSERVER_WFS_BASE_URL`) e devolve disponibilidade ou o arquivo CSV. O browser **não** baixa arquivos diretamente do GeoServer.
+5. **Downloads passam pelo backend.** A tela consome `POST /downloads/search` e `GET /downloads/file`. O backend valida o território no `dsp-db`. Se o object storage estiver ligado e o CSV pré-gerado existir, devolve esses bytes; senão consulta o GeoServer Download via WFS (`DSP_GEOSERVER_WFS_BASE_URL`). O browser **não** baixa arquivos diretamente do GeoServer nem do bucket.
 6. **Mapas continuam com consumo direto do GeoServer Exhibition.** O `rer-dsp-frontend` consome WMS/WFS do Exhibition para desenhar camadas e carregar geometria de AOI — integração separada dos downloads de arquivo.
 
 Essa separação isola a carga de exportação (Tomcat/JVM/conexões do GeoServer Download) da navegação no mapa (Exhibition), mantendo a geometria completa em um único PostGIS.

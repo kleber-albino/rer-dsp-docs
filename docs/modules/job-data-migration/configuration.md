@@ -61,6 +61,8 @@ A auto-configuração JDBC do Boot é excluída. Quatro beans manuais — cada u
 | `targetDataSource` | `spring.datasource.target` | `dsp-db` | UPSERT negócio + `boundary_box` + `centroid_coordinates` |
 | `geoTargetDataSource` | `spring.datasource.geo-target` | `geoserver-db` | UPSERT `geometry` completa + bbox/centroid |
 
+No fluxo orquestrado pelo `rer-dsp-core`, o bean `batch` aponta para o **mesmo** `dsp-db` (schema `data_migration`), não para um banco separado. Isolado, use o banco `batch_metadata` da tabela acima.
+
 Contrato completo dos papéis: [Bancos de dados](../../architecture/databases.md).
 
 ---
@@ -90,8 +92,10 @@ psql -h localhost -p 6666 -U postgres -d batch_metadata \
   -f src/main/resources/db/batch_metadata/01_spring_batch_schema.sql
 ```
 
-!!! note "Duas cópias do mesmo schema"
-    O `rer-dsp-core` também mantém uma cópia deste schema (`config/db/dsp-job-migration-db/01_spring_batch_schema.sql`). No fluxo orquestrado, esse SQL é **copiado para a imagem** de `dsp-job-migration-db` (`/docker-entrypoint-initdb.d`) e o Postgres aplica na primeira inicialização do volume. As duas cópias existem porque servem consumidores diferentes — orquestrado (core) vs. standalone (este módulo) — e precisam ser mantidas em sincronia manualmente se eventualmente o schema do Spring Batch mudar.
+!!! note "Onde o schema Spring Batch vive"
+    Isolado (este módulo, sem o core): crie o banco `batch_metadata` e aplique `src/main/resources/db/batch_metadata/01_spring_batch_schema.sql`, como acima.
+
+    No fluxo orquestrado pelo `rer-dsp-core` **não há** um terceiro banco. Os metadados `BATCH_*` da **migração** ficam no schema `data_migration` do `dsp-db` (exclusivo deste job). O job geo-file usa o schema separado `geo_file_generation`. O SQL `config/db/dsp-db/02_data_migration_batch.sql` é **copiado para a imagem** do `dsp-db` (`/docker-entrypoint-initdb.d`) e o Postgres aplica na primeira inicialização do volume. As duas cópias (standalone vs. orquestrado) servem consumidores diferentes e precisam ser mantidas em sincronia se o schema do Spring Batch mudar.
 
 Conferir:
 
@@ -103,7 +107,7 @@ psql -h localhost -p 6666 -U postgres -d batch_metadata -c '\dt BATCH*'
 
 ## Configuração YAML
 
-Arquivo: `src/main/resources/application.yaml`.
+Arquivo: `src/main/resources/application.yaml` (execução isolada). No fluxo orquestrado pelo `rer-dsp-core`, o YAML gerado em `config/Job-Data-Migration/application/application.yaml` e o `mapLayersConfig.json` são **copiados para a imagem** do job no `docker compose build` (`SPRING_CONFIG_LOCATION=file:/config/application.yaml`).
 
 ```mermaid
 flowchart LR

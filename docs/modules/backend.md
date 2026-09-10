@@ -59,7 +59,7 @@ Definidas com valores default em `src/main/resources/application.properties`.
 | `GET /state/getCitiesByUf/{idState}` | Cidades por estado |
 | `GET /state/getUfsByRegion/{region}` | Estados por região |
 | `GET /downloads/themes` | Temas disponíveis para download (catálogo em `downloadThemesConfig.json`) |
-| `GET /config/about` | Conteúdo configurável da página About: `enabled`, `bannerTitle`, `defaultTabId` e `tabs[]` (`id`, `label`, `content` em Markdown) |
+| `GET /config/about` | Conteúdo configurável da página About: `enabled`, `bannerTitle` e `tabs[]` (`id`, `label`, `content` em Markdown) |
 | `POST /downloads/search` | Busca itens por hierarquia/tema (nível 2 obrigatório, nível 3 opcional) |
 | `GET /downloads/file` | Download de arquivo CSV via proxy WFS |
 | `GET /map/getBaseMaps` | Mapas base configurados |
@@ -92,7 +92,7 @@ O frontend consome `GET /config/installation` para montar filtros, títulos de t
 
 Chaves de `field`:
 
-- Colunas da migração da AOI: `id`, `registration_date`, `updated_at`, `area`, e extras de `persist_columns` (ex. `nome`, `latitude`).
+- Colunas da migração da AOI: `id`, `created_at`, `updated_at`, `area`, e extras de `persist_columns` (ex. `nome`, `latitude`).
 - Calculados na aplicação (não são coluna): `calculated.latitude`, `calculated.longitude`, `calculated.territory_level_2_name`, `calculated.territory_level_3_name`.
 
 `GET /totalizer/getDeatilsByIdentifier/{identifier}` e `GET /totalizer/getDetailsByCoordinates` devolvem o DTO estrutural (compatível com o front atual: `latitude`/`longitude` do centróide, `territory`, `alterationDate`, etc.) **e** o mapa `attributes`. A chave em `attributes` é a mesma de `fields[].field` (não camelCase). Datas em `attributes` usam `yyyy-MM-dd`. `otherIds` e o download não entram em `attributes`.
@@ -182,10 +182,13 @@ O catálogo de temas de download vem de `downloadThemesConfig.json`, gerado pelo
 1. Valida território (nível 2 obrigatório, nível 3 opcional) no `dsp-db`.
 2. Monta filtro CQL por tema.
 3. Consulta o **GeoServer Download** via WFS (`GetFeature` com `resultType=hits` na busca; `outputFormat=csv` no download) em `DSP_GEOSERVER_WFS_BASE_URL`.
-4. Para temas com feições no recorte, consulta `updated_at` via WFS (`sortBy`, `count=1`) e preenche `lastUpdate` na resposta.
-5. Devolve status ou bytes CSV ao frontend — o browser não acessa o GeoServer para arquivos de download.
+4. Para temas com feições no recorte, consulta `updated_at` via WFS (`sortBy`, `count=1`) e preenche `lastUpdate` na resposta (data de negócio).
+5. Lê a metadata `generated-at` do objeto no storage (`HeadObject` do primeiro formato do tema) e preenche `lastFileGenerated`. Sem objeto ou storage desligado, o campo fica `null`.
+6. Devolve status ou bytes CSV ao frontend — o browser não acessa o GeoServer para arquivos de download.
 
-Se `updated_at` faltar no WFS, a busca continua OK e `lastUpdate` fica `null` (UI exibe `—`).
+Se `updated_at` faltar no WFS, a busca continua OK e `lastUpdate` fica `null` (UI exibe `—`). Sem `generated-at`, `lastFileGenerated` também fica `null` (UI exibe `—`). Arquivos já no bucket só passam a ter `generated-at` na próxima geração bem-sucedida.
+
+O CSV de download usa data/hora em **UTC**, texto ISO 8601 `yyyy-MM-dd'T'HH:mm:ss'Z'` (exemplo `2026-08-18T18:43:48Z`), sem fração de segundo. O job grava nesse padrão; o GeoServer Download usa o mesmo `csvDateFormat` com `TZ=UTC`. O backend só encaminha os bytes — não reconverte a data. Arquivos já no storage só nascem no formato novo na próxima geração.
 
 ## Configuração da página About
 
@@ -199,7 +202,7 @@ O conteúdo institucional da página About pode ser configurado pelo adotante vi
 
 `AboutConfigService` lê o JSON de índice (`file:`/`classpath:`/caminho puro) e, para cada aba, lê o `.md` correspondente dentro de `contentDir`, montando a resposta; o resultado fica em cache. Se `enabled=false` no índice ou o arquivo de índice não existir, a resposta volta com `enabled=false` e `tabs` vazia — a aplicação não derruba por isso. JSON malformado ou `.md` referenciado ausente resultam em erro 500 (mesmo padrão do `InstallationConfigService`).
 
-`GET /config/about` é exposto por `AboutController`/`AboutApi` e devolve `AboutConfigResponse` (`enabled`, `bannerTitle`, `defaultTabId`, `tabs: [{ id, label, content }]`), onde `content` já é o Markdown lido do arquivo correspondente.
+`GET /config/about` é exposto por `AboutController`/`AboutApi` e devolve `AboutConfigResponse` (`enabled`, `bannerTitle`, `tabs: [{ id, label, content }]`), onde `content` já é o Markdown lido do arquivo correspondente. A primeira aba da lista é a que abre por padrão no frontend.
 
 ## Integração com os demais módulos
 

@@ -12,8 +12,8 @@ Este guia é voltado a um **administrador de infraestrutura** responsável por c
 | Git           | se os repositórios irmãos ainda não estiverem clonados; os scripts podem cloná-los automaticamente                       |
 | Docker        | 24+ com Compose v2                                                                                                              |
 | Python        | Python 3 (usado pelo wizard `./config.sh`)                                                                                     |
-| Portas usadas | Gateway `8026` (todo o tráfego HTTP), DSP DB `20654`, Job migration DB `20655`, GeoServer DB `20656` |
-| Armazenamento | Volumes persistentes para os 3 bancos Postgres/PostGIS (dsp-db, dsp-geoserver-db, dsp-job-migration-db)              |
+| Portas usadas | Gateway `8026` (todo o tráfego HTTP), DSP DB `20654`, GeoServer DB `20656` |
+| Armazenamento | Volumes persistentes para os 2 bancos Postgres/PostGIS (dsp-db, dsp-geoserver-db) |
 
 ## Fluxo de instalação
 
@@ -75,7 +75,7 @@ Se precisar personalizar portas, credenciais dos 3 bancos ou paths dos repositó
 
 Wizard interativo em 5 estágios que gera `config/adopter/adopter-config.yaml` e, a partir dele, os arquivos operacionais JSON/YAML consumidos pelos demais módulos (configuração de instalação do backend, camadas de mapa, catálogo de temas de download, `application.yaml` do job de migração). Cada pergunta explica o campo e seu impacto antes de pedir o valor; você também pode editar o `adopter-config.yaml` diretamente, sem passar pelo wizard. Se um `adopter-config.yaml` já existir, o script oferece reaplicar, editar (reabre o wizard com os valores atuais) ou recomeçar do template.
 
-Depois dos 5 estágios, o wizard ainda pergunta se você quer habilitar a página About customizada do frontend — título do banner, quantidade de abas e, para cada aba, título e arquivo `.md` (em `config/about/`) — gerando `config/about/about-config.json`. Detalhamento estágio a estágio: [rer-dsp-core](../modules/core.md#configsh).
+Depois dos 5 estágios, o wizard ainda pergunta se você quer habilitar a página About customizada do frontend — título do banner, quantidade de abas e, para cada aba, título e caminho de um arquivo `.md` (em qualquer pasta do computador; o wizard copia para `config/about/`) — gerando `config/about/about-config.json`. Detalhamento estágio a estágio: [rer-dsp-core](../modules/core.md#configsh).
 
 ### Passo 4 — `./setup.sh`
 
