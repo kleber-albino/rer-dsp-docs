@@ -183,6 +183,8 @@ A auto-configuração JDBC do Boot é excluída. Quatro beans manuais — `batch
 | `targetDataSource` | `spring.datasource.target` | `dsp-db` | UPSERT negócio + `boundary_box` + `centroid_coordinates` |
 | `geoTargetDataSource` | `spring.datasource.geo-target` | `geoserver-db` | UPSERT `geom` completa (sem bbox/centroid) |
 
+No fluxo orquestrado pelo `rer-dsp-core`, o bean `batch` aponta para o **mesmo** `dsp-db` (schema `data_migration`), não para um banco separado. Isolado, use o banco `batch_metadata` da tabela acima.
+
 Contrato completo dos papéis: [Bancos de dados](../../architecture/databases.md).
 
 ---
@@ -210,8 +212,10 @@ psql -h localhost -p 6666 -U postgres -d dsp_db \
   -f src/main/resources/db/batch_metadata/01_spring_batch_schema.sql
 ```
 
-!!! note "Duas cópias do mesmo schema"
-    O `rer-dsp-core` também mantém uma cópia (`config/db/dsp-db/02_data_migration_batch.sql`), usada na inicialização Docker do `dsp-db`. As duas cópias precisam ficar iguais se o schema do Spring Batch mudar.
+!!! note "Onde o schema Spring Batch vive"
+    **Standalone** (sem o core): aplique `src/main/resources/db/batch_metadata/01_spring_batch_schema.sql` no banco de destino, como acima.
+
+    **Orquestrado pelo core**: não há terceiro banco Postgres. Os metadados `BATCH_*` da migração ficam no schema `data_migration` do `dsp-db`. O job geo-file usa o schema separado `geo_file_generation`. O SQL `config/db/dsp-db/02_data_migration_batch.sql` é copiado para a imagem do `dsp-db` (`/docker-entrypoint-initdb.d`). As cópias standalone e orquestrada precisam permanecer sincronizadas se o schema mudar.
 
 Conferir:
 
@@ -223,7 +227,7 @@ psql -h localhost -p 6666 -U postgres -d dsp_db -c '\dt data_migration.*'
 
 ## Configuração YAML
 
-Arquivo: `src/main/resources/application.yaml` (standalone) ou o gerado pelo `./config.sh` do core (`config/Job-Data-Migration/application/application.yaml`).
+Arquivo: `src/main/resources/application.yaml` (standalone) ou o gerado pelo `./config.sh` do core (`config/Job-Data-Migration/application/application.yaml`). No fluxo orquestrado, YAML e `mapLayersConfig.json` são **copiados para a imagem** no build (`SPRING_CONFIG_LOCATION=file:/config/application.yaml`). Depois de `./config.sh`, rebuild via `./setup.sh` ou `./start.sh`.
 
 ```mermaid
 flowchart LR
@@ -319,7 +323,7 @@ batch:
 |-------------|-------------|-----------|
 | `source-table` | sim | Tabela/schema de origem |
 | `target-table` | sim | Tabela/schema de destino |
-| `primary-key` | sim | PK **na origem** (base do `ON CONFLICT` no destino via mapping) |
+| `primary-key` | sim | PK **na origem**: **uma** coluna (chave composta não é suportada). Base do `ON CONFLICT` no destino via mapping; o FID do WFS/CSV usa só essa coluna |
 | `geometry-column` | sim | Coluna PostGIS **na origem** |
 | `creation-date-column` | sim | Coluna de criação na origem — base do watermark |
 | `updated-at-column` | não | Coluna de atualização na origem; se omitida, o incremental usa só a criação |

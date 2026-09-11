@@ -4,7 +4,7 @@ Este módulo é parte do [DSP](../index.md) — veja a documentação completa e
 
 ## Objetivo
 
-O `rer-dsp-core` é o hub de orquestração Docker Compose do DSP. Ele **não contém código de aplicação/domínio** — sua responsabilidade é preparar e subir a infraestrutura (bancos, GeoServer, gateway) e orquestrar o build dos demais módulos.
+O `rer-dsp-core` é o hub de orquestração Docker Compose do DSP. Ele **não contém código de aplicação/domínio** — sua responsabilidade é preparar e subir a infraestrutura (bancos, GeoServers, gateway, jobs de migração e geo-file) e orquestrar o build dos demais módulos.
 
 ```mermaid
 flowchart TD
@@ -12,12 +12,14 @@ flowchart TD
   be["rer-dsp-backend"]
   fe["rer-dsp-frontend"]
   job["rer-dsp-job-data-migration"]
+  geoFile["rer-dsp-job-geo-file-generation"]
   gs["2 GeoServers + 2 bancos Postgres/PostGIS"]
   gw["dsp-gateway"]
 
   core --> be
   core --> fe
   core --> job
+  core --> geoFile
   core --> gs
   core --> gw
 ```
@@ -29,6 +31,7 @@ flowchart TD
 - SQL de inicialização dos bancos.
 - GeoServer Exhibition (mapa) e GeoServer Download (WFS de exportação).
 - Gateway nginx (`dsp-gateway`) como porta de entrada única da stack.
+- Job de migração (`dsp-job-migration`, profile `migration`) e job geo-file (`dsp-job-geo-file-generation`, profile `geo-file`).
 - Três scripts operacionais: `./config.sh`, `./setup.sh`, `./start.sh`.
 - Clone automático dos repositórios irmãos quando ausentes (com preview da estrutura de pastas antes da confirmação). `./config.sh` também clona o job se faltar.
 
@@ -52,7 +55,7 @@ Wizard interativo (`scripts/apply_adopter_config.py`) que gera `config/adopter/a
 - About opcional (`config/about/`).
 - `application.yaml` do job de migração — datasources e mapeamento ETL (watermark).
 
-Rodar sem argumentos (`./config.sh`).
+Rodar sem argumentos (`./config.sh`). Antes do wizard, o script confere os repositórios irmãos (`rer-dsp-backend`, `rer-dsp-frontend`, `rer-dsp-job-data-migration`, `rer-dsp-job-geo-file-generation`) e oferece clonar o que faltar.
 
 **Primeira execução** (sem `adopter-config.yaml` ainda): o script pergunta como configurar:
 
@@ -80,7 +83,7 @@ O wizard é dividido em **4 estágios** (+ About opcional), cada um cobrindo um 
 | Estágio | O que é configurado | Impacto |
 |---------|----------------------|---------|
 | **1/4 — Banco de origem e referência espacial** | URL JDBC da fonte, usuário/senha de leitura (`DSP_SOURCE_DB_USER` / `DSP_SOURCE_DB_PASSWORD`), SRID de cada nível territorial (L1/L2/L3) e da área de interesse | Usado pelo job de migração (ETL, inclusive `ST_Transform` em UA/AOI/camadas) e gravado no `.env` |
-| **2/4 — Tabelas, colunas e camadas** | Para L1/L2/L3/AOI: tabela, PK, `parent_key` (L2/L3), nome, geometria, `created_at_column` (obrigatório), `updated_at_column` (opcional), `where-clause`. Na AOI: `territory_level_3_column`, `area_column`, `additional_columns`, `business_only_persist_columns` (KPIs). Camadas genéricas em `etl.layers[]` (ETL + mapa + downloads num único bloco) | Plano ETL, `mapLayersConfig.json` e `downloadThemesConfig.json`. Contrato de colunas: [Contrato de colunas](job-data-migration/configuration.md#contrato-de-colunas) |
+| **2/4 — Tabelas, colunas e camadas** | Para L1/L2/L3/AOI: tabela, PK (**uma** coluna; composta não suportada), `parent_key` (L2/L3), nome, geometria, `created_at_column` (obrigatório), `updated_at_column` (opcional), `where-clause`. Na AOI: `territory_level_3_column`, `area_column`, `additional_columns`, `business_only_persist_columns` (KPIs). Camadas genéricas em `etl.layers[]` (ETL + mapa + downloads num único bloco) | Plano ETL, `mapLayersConfig.json` e `downloadThemesConfig.json`. Contrato de colunas: [Contrato de colunas](job-data-migration/configuration.md#contrato-de-colunas) |
 | **3/4 — Textos da aplicação e KPIs** | Label/unidade de cada KPI habilitado, unidade de área, formato de data e data-hora | Cards de KPI, detalhe e downloads |
 | **4/4 — Interface** | Labels da hierarquia, títulos das telas, campos do painel de detalhe da AOI, cores de KPI, `map.initialView` (`territorial_bbox` / `manual` / `planet`), grupos e estilos das camadas fixas de mapa | Frontend, seletor de camadas e estilos publicados no GeoServer |
 | **Opcional — About** | Página About customizada (tabs em Markdown) | Gera `config/about/about-config.json` + arquivos em `config/about/` |
@@ -113,14 +116,14 @@ A mesma `source_table` pode aparecer **mais de uma vez** se `layer_name` (e port
 
 Para **não** migrar ou exibir uma camada, remova-a de `etl.layers[]` e reaplique — não use `enabled: false` no YAML do adotante.
 
-Depois dos 4 estágios, o wizard pergunta se o adotante quer habilitar a página **About** customizada. Se sim, pergunta o título do banner, quantas abas terá e, para cada aba, o **label** e o arquivo `.md` (em `config/about/`). Arquivos de fora da pasta são copiados para lá; nomes duplicados são slugificados a partir do label. Se o adotante optar por não habilitar, a página About fica desabilitada.
+Depois dos 4 estágios, o wizard pergunta se o adotante quer habilitar a página **About** customizada. Se sim, pergunta o título do banner, quantas abas terá (mínimo 1) e, para cada aba, o **label** e o caminho de um `.md` ou `.markdown` em qualquer pasta do computador. Arquivos fora de `config/about/` são copiados para lá (nome slugificado a partir do label); arquivos já na pasta são reutilizados. Os ids (`tab-1`, `tab-2`, …) são gerados em `about-config.json`; a primeira aba abre por padrão. Se o arquivo não existir ou a extensão for inválida, o wizard repergunta. Se o adotante optar por não habilitar, a página About fica desabilitada.
 
 !!! tip "Contrato protegido"
     O arquivo gerado contém apenas os campos editáveis pelo adotante. Chaves de contrato internas do DSP (IDs de camada WMS, nomes de tabela alvo, códigos de KPI) permanecem fixas nos templates do core e não são expostas no wizard.
 
 #### Página About (`config/about/`)
 
-A pasta `config/about/` traz o conteúdo de exemplo da página About do frontend: `about-config.json.example` (índice de exemplo) e arquivos `.md.example` de exemplo (ex.: `overview.md.example`, `how-to-use.md.example`).
+A pasta `config/about/` traz o conteúdo de exemplo da página About do frontend: `about-config.json.example` (índice de exemplo) e os Markdown de demonstração (`*.quickstart.md.example`, copiados no modo Demonstração). O fluxo normal do wizard é informar um Markdown de qualquer pasta do computador, que é copiado para `config/about/`.
 
 O YAML do adotante (`config/adopter/adopter-config.yaml` / `.yaml.example`) tem uma seção `about` com os campos:
 
@@ -128,7 +131,7 @@ O YAML do adotante (`config/adopter/adopter-config.yaml` / `.yaml.example`) tem 
 |-------|--------|
 | `enabled` | Habilita/desabilita a página About customizada |
 | `banner_title` | Título exibido no banner da página |
-| `tabs` | Lista de `{label, file}` — `file` é o nome do Markdown em `config/about/` |
+| `tabs` | Lista de `{label, file}` — no wizard, `file` pode ser de qualquer pasta (copiado para `config/about/`); na edição manual do YAML, só o nome do arquivo já presente em `config/about/` (caminhos absolutos ou fora da pasta são recusados no apply) |
 
 `apply_config()` gera `config/about/about-config.json` com ids automáticos (`tab-1`, `tab-2`, …) a partir da ordem das abas. O backend lê esses arquivos em `/config/about/` **dentro da imagem** (copiados no build). Variáveis: `DSP_ABOUT_CONFIG_FILE` e `DSP_ABOUT_CONTENT_DIR` (`.env.example`).
 
@@ -188,18 +191,20 @@ AOI e camadas genéricas só existem nos GeoServers depois que o job populou o `
 
 1. Verifica os repositórios irmãos `rer-dsp-backend` e `rer-dsp-frontend` (paths via `DSP_BACKEND_PATH`/`DSP_FRONTEND_PATH`, default `../rer-dsp-backend` e `../rer-dsp-frontend`).
 2. Garante a configuração de instalação (`installationConfig.json`) e de camadas de mapa.
-3. Sobe os bancos (sem migrar agora) e, se o modo for `continuous` ou `scheduled-once` ainda pendente, mantém a stack de migração ativa.
-4. Garante os GeoServers no ar e builda/sobe `dsp-backend`, `dsp-frontend` e o `dsp-gateway`. Se a carga inicial foi **Run now**, as camadas já foram publicadas no `./setup.sh`; se foi **Schedule for later**, o populate roda depois da primeira migração agendada (entrypoint do job).
+3. Sobe os bancos (sem migrar agora) e, se o modo for `continuous` ou `scheduled-once` ainda pendente, mantém a stack de migração ativa. Se `DSP_OBJECT_STORAGE_ENDPOINT` estiver definido, sobe também o job geo-file (`profile=geo-file`).
+4. Garante os GeoServers no ar (rebuild atualiza o JSON de mapa na imagem) e builda/sobe `dsp-backend`, `dsp-frontend` e o `dsp-gateway`. Se a carga inicial foi **Run now**, as camadas já foram publicadas no `./setup.sh`; se foi **Schedule for later**, o populate roda depois da primeira migração agendada (entrypoint do job).
 5. Imprime um resumo da stack e as URLs de cada serviço.
 
 ## Bancos e GeoServer
 
-Só os bancos publicam porta no host. Os serviços HTTP ficam acessíveis apenas pelo gateway.
+Só os bancos publicam porta no host. Os serviços HTTP ficam acessíveis apenas pelo gateway. Os dois jobs não expõem HTTP — sobem por profile do Compose.
 
-| Serviço | Acesso no host | Papel |
-|---------|----------------|-------|
-| dsp-db | porta `20654` | Banco operacional — negócio + bbox/centroid; schema `data_migration` (Spring Batch + watermark) |
+| Serviço | Acesso | Papel |
+|---------|--------|-------|
+| dsp-db | porta `20654` | Banco operacional — negócio + bbox/centroid. Metadados Spring Batch: schema `data_migration` (migração + watermark) e `geo_file_generation` (job geo-file) |
 | dsp-geoserver-db | porta `20656` | Geometria completa `dsp.*` (`geom`) |
+| Job de migração (`dsp-job-migration`) | profile `migration`, sem HTTP | ETL da origem JDBC para `dsp-db` e `geoserver-db` |
+| Job geo-file (`dsp-job-geo-file-generation`) | profile `geo-file`, sem HTTP | Pré-gera CSV de download no object storage (se `DSP_OBJECT_STORAGE_ENDPOINT` definido) |
 | GeoServer Exhibition | via gateway `/geoserver-exhibition/` | WMS/WFS de mapa |
 | GeoServer Download | via gateway `/geoserver-download/` | WFS de downloads (consumido pelo backend) |
 
@@ -211,10 +216,13 @@ flowchart LR
   job -->|"negócio + bbox/centroid"| dspdb[(dsp-db)]
   job -->|"geometria completa"| exdb[(dsp-geoserver-db)]
   exdb --> gsEx[GeoServer Exhibition WMS]
-  exdb <--> gsDl[GeoServer Download WFS]
+  exdb --> gsDl[GeoServer Download WFS]
+  exdb --> geoFile[Job geo-file]
+  geoFile -->|CSV pré-gerado| s3[(Object storage)]
   dspdb --> be[Backend serve API]
   be --> fe[Frontend consome API + WMS]
   be -->|WFS downloads| gsDl
+  be -->|CSV S3-first| s3
 ```
 
 ## Gateway (`dsp-gateway`)
@@ -222,8 +230,7 @@ flowchart LR
 Container nginx que é a porta de entrada única da stack. Frontend, backend e os dois GeoServers não
 publicam porta no host — tudo entra por `DSP_GATEWAY_HOST_PORT` (default `8026`).
 
-A configuração fica em `config/Gateway/nginx/default.conf.template` e é processada por `envsubst`
-quando o container sobe, substituindo apenas as variáveis `DSP_*`.
+A configuração fica em `config/Gateway/nginx/default.conf.template`, é **copiada para a imagem** no `docker compose build` (`/etc/nginx/templates/`) e processada por `envsubst` quando o container sobe, substituindo apenas as variáveis `DSP_*`. O volume `dsp_gateway_cache` guarda só o cache, não os templates.
 
 | Rota externa | Destino interno |
 |--------------|-----------------|
@@ -283,16 +290,18 @@ Embora o assistente de configuração `./config.sh` elimine a necessidade de edi
 | `DSP_SOURCE_DB_USER` / `DSP_SOURCE_DB_PASSWORD` | Credenciais da fonte JDBC |
 | `DSP_MIGRATION_EXECUTION_MODE` | `once`: carga no setup e desliga o job. `continuous`: supercronic em `DSP_MIGRATION_CRON`. `scheduled-once`: uma carga em `DSP_MIGRATION_SCHEDULED_AT` |
 | `DSP_MIGRATION_CRON` | Cron Unix de 5 campos gerado pelo setup (ex.: `0 */6 * * *` ou `*/2 * * * *`). Só `continuous` |
-| `DSP_MIGRATION_SCHEDULED_AT` | Data/hora da primeira carga quando o setup escolhe **Schedule for later** (`scheduled-once` ou `continuous` agendado) |
-| `DSP_MIGRATION_TZ` | Fuso IANA do relógio. Valor no `.env`; default em `.env.example` |
+| `DSP_MIGRATION_SCHEDULED_AT` | Data/hora da primeira carga quando o setup escolhe **Schedule for later** |
+| `DSP_MIGRATION_TZ` | Fuso IANA do relógio (`.env.example`) |
 | Credenciais dos 2 bancos do core | Usuário/senha de dsp-db e dsp-geoserver-db |
-| `DSP_GEOSERVER_WFS_BASE_URL` | URL WFS do GeoServer Download **na rede Docker** (backend → download). Default interno; browser usa o gateway |
-| `DSP_PUBLIC_BASE_URL` | URL pública da stack (`http://localhost:8026`). Alimenta URLs WMS/WFS geradas pelo `./config.sh` e `PROXY_BASE_URL` dos GeoServers |
-| `DSP_GATEWAY_HOST_PORT` | Porta HTTP do gateway (default `8026`) — única porta HTTP exposta no host |
-| `DSP_ABOUT_CONFIG_FILE` / `DSP_ABOUT_CONTENT_DIR` | Página About customizada gerada pelo wizard |
+| `DSP_GEOSERVER_WFS_BASE_URL` | URL WFS do GeoServer Download na rede Docker (backend → download) |
+| `DSP_PUBLIC_BASE_URL` | URL pública da stack (`http://localhost:8026`). Alimenta URLs WMS/WFS do `./config.sh` e `PROXY_BASE_URL` dos GeoServers |
+| `DSP_GATEWAY_HOST_PORT` | Porta HTTP do gateway (default `8026`) |
+| `DSP_GATEWAY_CACHE_BYPASS` / `DSP_GATEWAY_CACHE_TTL` | Liga/desliga o cache do nginx e define o TTL |
 | `DSP_CORS_ALLOWED_ORIGINS` | Origens permitidas no CORS do backend |
+| `DSP_ABOUT_CONFIG_FILE` / `DSP_ABOUT_CONTENT_DIR` | Índice About e pasta Markdown (default `file:/config/about/…`) |
+| `DSP_OBJECT_STORAGE_ENDPOINT` | Quando definido, habilita o job geo-file (`profile=geo-file`) |
 | Build args do frontend | `VITE_BASE_URL`, `VITE_DSP_API_URL` — definem base path e URL da API usadas no build da imagem |
-| `DSP_BACKEND_PATH` / `DSP_FRONTEND_PATH` / `DSP_JOB_MIGRATION_PATH` | Paths dos repositórios irmãos usados na orquestração de build |
+| `DSP_BACKEND_PATH` / `DSP_FRONTEND_PATH` / `DSP_JOB_MIGRATION_PATH` / `DSP_JOB_GEO_FILE_GENERATION_PATH` | Paths dos repositórios irmãos usados na orquestração de build |
 
 Variáveis antigas `DSP_RUN_MIGRATION` / `DSP_SKIP_MIGRATION` são rejeitadas. `DSP_MIGRATION_SYNC_INTERVAL` não é mais usado.
 
@@ -325,10 +334,11 @@ flowchart LR
 - **`./config.sh`** — ponto de entrada do adotante; reaplica, edita ou recria o `adopter-config.yaml` e dispara a geração dos JSON/YAML.
 - **`apply_adopter_config.py`** — traduz o YAML do adotante para os formatos consumidos por backend, frontend (via API), job de migração e GeoServers.
 - **`select-runtime-config.sh`** — no build Docker, escolhe o arquivo ativo ou o `.example` e copia para `/config` dentro da imagem.
-- **`installation-config.json`** — labels, hierarquia, telas, KPIs e `screens.home.detail.fields` (`DSP_INSTALLATION_CONFIG_FILE` no backend). Esse array **não** vai para o `application.yaml` do job.
-- **`mapLayersConfig.json`** — grupos e camadas WMS (`DSP_MAP_LAYERS_FILE`); publicadas nos GeoServers pelo `populate_geoserver.sh`.
-- **`downloadThemesConfig.json`** — temas de download derivados de AOI + `etl.layers[]` (`DSP_DOWNLOAD_THEMES_FILE`); `wfsBaseUrl` aponta para `${DSP_PUBLIC_BASE_URL}/geoserver-download/dsp/wfs`.
-- **`config/about/`** — About opcional (`about-config.json` + Markdown das tabs).
-- **`application.yaml`** — plano ETL (tabelas, colunas, camadas). Copiado para a imagem do job no build.
+- **`installation-config.json`** — labels, hierarquia, telas, KPIs e `screens.home.detail.fields` (`DSP_INSTALLATION_CONFIG_FILE`). Esse array **não** vai para o `application.yaml` do job.
+- **`mapLayersConfig.json`** — grupos e camadas WMS; publicadas nos GeoServers pelo `populate_geoserver.sh`.
+- **`downloadThemesConfig.json`** — temas de download (AOI + `etl.layers[]`); `wfsBaseUrl` em `${DSP_PUBLIC_BASE_URL}/geoserver-download/dsp/wfs`.
+- **`about-config.json`** — índice About (`enabled`, `bannerTitle`, `tabs` com ids `tab-1`, `tab-2`, …).
+- **`application.yaml`** — plano ETL. Copiado para a imagem do job no build (com entrypoint e scripts de publicação GeoServer).
+- **Imagens `dsp-backend`, GeoServers, `dsp-job-migration`, bancos e `dsp-gateway`** — configs e SQL de init copiados no build via `dsp_config`; volumes guardam só dados (e cache do gateway).
 
 Veja também: [Fluxo de dados](../architecture/data-flow.md) (runtime) e [rer-dsp-backend](backend.md) (variáveis de ambiente de downloads).

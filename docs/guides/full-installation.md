@@ -13,7 +13,7 @@ Este guia é voltado a um **administrador de infraestrutura** responsável por c
 | Docker        | 24+ com Compose v2                                                                                                              |
 | Python        | Python 3 (usado pelo wizard `./config.sh`)                                                                                     |
 | Portas usadas | Gateway `8026` (todo o tráfego HTTP), DSP DB `20654`, GeoServer DB `20656` |
-| Armazenamento | Volumes persistentes para os 2 bancos Postgres/PostGIS (`dsp-db`, `dsp-geoserver-db`); metadados Spring Batch no schema `data_migration` dentro do `dsp-db` |
+| Armazenamento | Volumes persistentes para os 2 bancos Postgres/PostGIS (`dsp-db`, `dsp-geoserver-db`); metadados Spring Batch nos schemas `data_migration` e `geo_file_generation` dentro do `dsp-db` |
 
 ## Fluxo de instalação
 
@@ -74,6 +74,8 @@ Se precisar personalizar portas, credenciais dos 2 bancos ou paths dos repositó
 ### Passo 3 — `./config.sh`
 
 Wizard interativo em **4 estágios** (+ About opcional) que gera `config/adopter/adopter-config.yaml` e, a partir dele, os arquivos operacionais JSON/YAML (instalação do backend, camadas de mapa, temas de download, `application.yaml` do job). Você também pode trazer um YAML pronto ou editá-lo manualmente e **reaplicar**. Detalhamento: [rer-dsp-core](../modules/core.md#configsh).
+
+Depois dos 4 estágios (+ About opcional), o wizard pode habilitar a página About — título do banner, abas e Markdown (o wizard copia arquivos de qualquer pasta para `config/about/`).
 
 !!! tip "Rebuild após configurar"
     Os arquivos gerados são copiados para as imagens Docker no build. Depois de `./config.sh`, rode `./setup.sh` ou `./start.sh` para que backend, GeoServers e job usem a configuração nova.

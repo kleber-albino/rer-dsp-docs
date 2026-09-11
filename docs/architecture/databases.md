@@ -1,11 +1,11 @@
 # Bancos de dados — contrato de papéis
 
-Contrato dos **três papéis de banco físico** no fluxo de migração e consumo do DSP, após a separação geo. Os metadados do Spring Batch e o watermark incremental ficam no schema `data_migration` dentro do `dsp-db` (não em um Postgres extra).
+Contrato dos papéis de datasource no fluxo de migração, geração de arquivos e consumo do DSP. Há **dois bancos Postgres** no Compose; metadados Spring Batch ficam em **schemas separados** dentro do `dsp-db` (`data_migration` para migração + watermark; `geo_file_generation` para o job geo-file).
 
 ## Sumário
 
 - [Visão geral](#visao-geral)
-- [Os três bancos físicos (quatro papéis JDBC)](#os-tres-bancos-fisicos-quatro-papeis-jdbc)
+- [Papéis de datasource](#papeis-de-datasource)
 - [Colunas geo por banco](#colunas-geo-por-banco)
 - [Quem lê e quem escreve](#quem-le-e-quem-escreve)
 - [Dual-write do job](#dual-write-do-job)
@@ -31,7 +31,6 @@ flowchart LR
   gsDl[GeoServer Download]
 
   src -->|read| job
-  job -->|bbox + centroid| dsp
   job -->|geom| ex
   job -->|BATCH_* + watermark| dsp
   api -->|read| dsp
@@ -42,18 +41,19 @@ flowchart LR
 
 ---
 
-## Os três bancos físicos (quatro papéis JDBC)
+## Papéis de datasource
 
-| Papel | Serviço / prefixo | Conteúdo |
-|-------|-------------------|----------|
-| **source** | Fora do Compose (`spring.datasource.source`) | Banco da organização — fonte da migração |
-| **dsp-db** | `dsp-db` · `spring.datasource.target` | Dados de negócio + `boundary_box` + `centroid_coordinates` — **sem** coluna de geometria completa |
-| **geoserver-db** | `dsp-geoserver-db` · `spring.datasource.geo-target` | Mesmas tabelas `dsp.*` **com** coluna `geom` completa |
-| **batch** | mesmo `dsp-db` · `spring.datasource.batch` · schema `data_migration` | Metadados Spring Batch (`BATCH_*`) e `BATCH_JOB_EXECUTION_SYNC_STATE` (watermark) |
+São papéis de **conexão**, não containers Postgres extras. No core há dois serviços (`dsp-db` e `dsp-geoserver-db`). O job de migração mantém **quatro DataSources** no Java (`source`, `target`, `geo-target`, `batch`); `batch` e `target` apontam para o mesmo `dsp-db`, com pools separados.
 
-O job mantém **quatro DataSources** no Java. `batch` e `target` apontam para o mesmo Postgres (`dsp-db`), com pools e transações separados. A URL de `batch` usa `currentSchema=data_migration`.
+| Papel | Onde (fluxo orquestrado pelo core) | Para que serve |
+|-------|-------------------------------------|----------------|
+| **source** | Banco do adotante, fora do Compose (`spring.datasource.source`) | Origem da migração — só leitura |
+| **dsp-db** | Serviço `dsp-db`, schema `dsp` (`spring.datasource.target`) | Dados de negócio, `boundary_box` e `centroid_coordinates`. Sem `geom` completa. É o que o backend consulta |
+| **geoserver-db** | Serviço `dsp-geoserver-db`, schema `dsp` (`spring.datasource.geo-target`) | Mesmas entidades com coluna `geom` completa. É o que os GeoServers leem |
+| **batch** (migração) | Schema `data_migration` no `dsp-db` (`spring.datasource.batch` do job de migração) | Metadados Spring Batch da migração: `BATCH_*` e `BATCH_JOB_EXECUTION_SYNC_STATE` (watermark). URL com `currentSchema=data_migration` |
+| **batch** (geo-file) | Schema `geo_file_generation` no `dsp-db` (job geo-file) | Metadados Spring Batch do job geo-file: `BATCH_*` (sem watermark). Isolado da migração |
 
-Ambos os bancos de destino (`dsp-db` e `geoserver-db`) expõem o schema `dsp` com as mesmas tabelas lógicas (`territory_level_1`, `territory_level_2`, `territory_level_3`, `area_of_interest`), mas com colunas geo distintas conforme a seção abaixo. IDs e FKs são `VARCHAR` (`territory_level_*`: `varchar(64)`; AOI/camadas: `varchar(255)` no `id`).
+`dsp-db` e `geoserver-db` repetem as tabelas lógicas (`territory_level_1`, `territory_level_2`, `territory_level_3`, `area_of_interest`). IDs e FKs são `VARCHAR` (`territory_level_*`: `varchar(64)`; AOI/camadas: `varchar(255)` no `id`). A diferença geo está na seção seguinte.
 
 ---
 
@@ -131,6 +131,7 @@ Instalações distintas podem usar SRIDs diferentes por camada, desde que o YAML
 | source | `spring.datasource.source` | — (externo; `DSP_SOURCE_JDBC_URL`, `DSP_SOURCE_DB_USER`, `DSP_SOURCE_DB_PASSWORD`) |
 | dsp-db (target) | `spring.datasource.target` | `dsp-db` |
 | geoserver-db (geo-target) | `spring.datasource.geo-target` | `dsp-geoserver-db` |
-| batch | `spring.datasource.batch` | `dsp-db` (schema `data_migration`; URL com `currentSchema=data_migration`) |
+| batch (migração) | `spring.datasource.batch` | `dsp-db`, schema `data_migration` |
+| batch (geo-file) | `spring.datasource.batch` | `dsp-db`, schema `geo_file_generation` |
 
 Detalhe operacional: [Job data-migration — Configuração e execução](../modules/job-data-migration/configuration.md) · validação: [Validação pós-migração](../modules/job-data-migration/validation.md) · orquestração dos bancos: [rer-dsp-core](../modules/core.md).

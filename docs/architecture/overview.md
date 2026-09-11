@@ -130,13 +130,14 @@ flowchart TB
 
 | Camada | Componentes | Responsabilidade                                                                      |
 |--------|-------------|---------------------------------------------------------------------------------------|
-| Orquestração / configuração | [rer-dsp-core](https://github.com/Rural-Environmental-Registry/rer-dsp-core) | Sobe bancos, GeoServers, gateway e orquestra build/config dos demais módulos via Docker Compose |
+| Orquestração / configuração | [rer-dsp-core](https://github.com/Rural-Environmental-Registry/rer-dsp-core) | Sobe bancos, GeoServers, gateway e os jobs (migração e geo-file); orquestra build/config dos demais módulos via Docker Compose |
 | Entrada HTTP | Gateway nginx (`dsp-gateway`, no core) | Porta de entrada única: roteia para frontend, backend e GeoServers; cache opcional |
 | Apresentação | [rer-dsp-frontend](https://github.com/Rural-Environmental-Registry/rer-dsp-frontend) | Interface web/mapas para consulta e compartilhamento                                  |
 | API | [rer-dsp-backend](https://github.com/Rural-Environmental-Registry/rer-dsp-backend) | Contratos REST, dados de negócio da plataforma                                        |
 | Integração / ETL | [rer-dsp-job-data-migration](https://github.com/Rural-Environmental-Registry/rer-dsp-job-data-migration) | Sincroniza atributos e geometria da fonte do adotante para os bancos do DSP           |
+| Arquivos de download | [rer-dsp-job-geo-file-generation](https://github.com/Rural-Environmental-Registry/rer-dsp-job-geo-file-generation) | Pré-gera CSV de download no object storage (profile `geo-file`) |
 | Publicação geo | GeoServer Exhibition + GeoServer Download | Exhibition: WMS/WFS de mapa; Download: WFS de exportação (mesmo geoserver-db) |
-| Persistência | PostgreSQL / PostGIS (2 bancos no Compose) | `dsp-db` (negócio + schema `data_migration` do Spring Batch) e `dsp-geoserver-db` (geometrias) |
+| Persistência | PostgreSQL / PostGIS (2 bancos no Compose) | `dsp-db` (negócio + schemas `data_migration` e `geo_file_generation`) e `dsp-geoserver-db` (geometrias) |
 | Documentação | [rer-dsp-docs](https://github.com/Rural-Environmental-Registry/rer-dsp-docs) (esta wiki) | Onboarding e padrões transversais de todos os repositórios                            |
 
 ---
@@ -145,9 +146,9 @@ flowchart TB
 
 O `rer-dsp-core` não contém código de aplicação/domínio — sua responsabilidade é exclusivamente de **orquestração e configuração**:
 
-- Sobe os 2 bancos Postgres/PostGIS (`dsp-db`, `dsp-geoserver-db`) e os dois GeoServers (Exhibition + Download) via Docker Compose. Metadados do Spring Batch e o watermark ficam no schema `data_migration` do `dsp-db`.
-- Gera, a partir do wizard `./config.sh` (4 estágios + About opcional), o `adopter-config.yaml` e os arquivos operacionais consumidos pelo backend (`installationConfig.json`, `mapLayersConfig.json`) e pelo job de migração (`application.yaml`).
-- Orquestra o build e a subida do backend, frontend e job de migração.
+- Sobe os 2 bancos Postgres/PostGIS, os GeoServers (Exhibition + Download), o gateway nginx e os jobs de migração e geo-file via Docker Compose. Watermark da migração no schema `data_migration` do `dsp-db`.
+- Gera, a partir do wizard `./config.sh` (4 estágios + About opcional), o `adopter-config.yaml` e os arquivos operacionais (`installationConfig.json`, `mapLayersConfig.json`, `downloadThemesConfig.json`, `application.yaml`).
+- Orquestra o build e a subida do backend, frontend, job de migração e job geo-file.
 - Não tem dependência de runtime sobre os demais módulos — precisa deles apenas no momento do build/orquestração.
 
 Detalhe operacional completo: [rer-dsp-core](../modules/core.md).
