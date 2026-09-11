@@ -192,7 +192,7 @@ batch:
 |-------------|-------------|-----------|
 | `source-table` | sim | Tabela/schema de origem |
 | `target-table` | sim | Tabela/schema de destino |
-| `primary-key` | sim | PK **na origem** (base do `ON CONFLICT` no destino via mapping) |
+| `primary-key` | sim | PK **na origem**: **uma** coluna (chave composta não é suportada). Base do `ON CONFLICT` no destino via mapping; o FID do WFS/CSV usa só essa coluna |
 | `geometry-column` | sim | Coluna PostGIS **na origem** |
 | `where-clause` | não | Filtro SQL extra na detecção/partição |
 | `comparison-columns` | sim | Colunas usadas para saber se o registro mudou (ou intervalo de datas em `DATE_RANGE`) |

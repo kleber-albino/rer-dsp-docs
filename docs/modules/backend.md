@@ -183,7 +183,7 @@ O catálogo de temas de download vem de `downloadThemesConfig.json`, gerado pelo
 2. Monta filtro CQL por tema.
 3. Consulta o **GeoServer Download** via WFS (`GetFeature` com `resultType=hits` na busca; `outputFormat=csv` no download) em `DSP_GEOSERVER_WFS_BASE_URL`.
 4. Para temas com feições no recorte, consulta `updated_at` via WFS (`sortBy`, `count=1`) e preenche `lastUpdate` na resposta (data de negócio).
-5. Lê a metadata `generated-at` do objeto no storage (`HeadObject` do primeiro formato do tema) e preenche `lastFileGenerated`. Sem objeto ou storage desligado, o campo fica `null`.
+5. Lê a metadata `generated-at` do objeto no storage (`HeadObject` do primeiro formato do tema) e preenche `lastFileGenerated`. O job grava esse instante no mesmo ISO UTC do CSV (`yyyy-MM-dd'T'HH:mm:ss'Z'`, exemplo `2026-09-10T16:55:19Z`), sem fração de segundo — não usa `Instant.toString()`. Sem objeto ou storage desligado, o campo fica `null`.
 6. Devolve status ou bytes CSV ao frontend — o browser não acessa o GeoServer para arquivos de download.
 
 Se `updated_at` faltar no WFS, a busca continua OK e `lastUpdate` fica `null` (UI exibe `—`). Sem `generated-at`, `lastFileGenerated` também fica `null` (UI exibe `—`). Arquivos já no bucket só passam a ter `generated-at` na próxima geração bem-sucedida.
