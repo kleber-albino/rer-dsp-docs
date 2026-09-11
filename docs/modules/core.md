@@ -346,5 +346,6 @@ flowchart LR
 - **`application.yaml`** — plano ETL. Copiado para a imagem do job no build (com entrypoint e scripts de publicação GeoServer).
 - **Imagens `dsp-backend`, GeoServers, `dsp-job-migration`, bancos e `dsp-gateway`** — configs e SQL de init copiados no build via `dsp_config`; volumes guardam só dados (e cache do gateway).
 - **Imagem `dsp-object-storage`** — SeaweedFS (`weed mini`) com credenciais em `s3.json` na imagem. Volume `dsp_object_storage_data` guarda os objetos. Capacidade total depende do disco do host; `-master.volumeSizeLimitMB` controla o tamanho de cada volume interno, não uma quota fixa.
+- **Imagem `dsp-object-storage`** — SeaweedFS (`weed mini`) com credenciais em `s3.json` na imagem. Volume `dsp_object_storage_data` guarda os objetos. Capacidade total depende do disco do host; `-master.volumeSizeLimitMB` controla o tamanho de cada volume interno, não uma quota fixa.
 
 Veja também: [Fluxo de dados](../architecture/data-flow.md) (runtime) e [rer-dsp-backend](backend.md) (variáveis de ambiente de downloads).
