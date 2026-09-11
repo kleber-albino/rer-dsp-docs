@@ -46,6 +46,7 @@ Definidas com valores default em `src/main/resources/application.properties`.
 | `DSP_ABOUT_CONFIG_FILE` | Caminho do JSON de índice da página About (`about-config.json`) |
 | `DSP_ABOUT_CONTENT_DIR` | Caminho da pasta com os arquivos Markdown das abas da página About |
 | `DSP_GEOSERVER_WFS_BASE_URL` | URL base WFS do GeoServer Download para exportação de downloads |
+| `DSP_ABOUT_CONFIG_FILE` / `DSP_ABOUT_CONTENT_DIR` | Página About customizada (gerada pelo `./config.sh` do core) |
 | `SPRING_DATASOURCE_URL` / `SPRING_DATASOURCE_USERNAME` / `SPRING_DATASOURCE_PASSWORD` | Conexão com `dsp-db` |
 | `SPRING_JPA_HIBERNATE_DDL_AUTO` | Gestão de schema (manter `none`) |
 
@@ -203,7 +204,7 @@ O conteúdo institucional da página About pode ser configurado pelo adotante vi
 
 ## Integração com os demais módulos
 
-- Depende do **core** para o schema `dsp` no Postgres e para os arquivos `installationConfig.json` e `mapLayersConfig.json` (no fluxo orquestrado, copiados para `/config` na imagem no build).
+- Depende do **core** para o schema `dsp` no Postgres e para os arquivos externos `installationConfig.json` e `mapLayersConfig.json`.
 - É consumido pelo **frontend** via API REST (`VITE_DSP_API_URL`).
 - Lê exclusivamente o banco **dsp-db** — nunca acessa `geoserver-db` diretamente.
 - Consulta o **GeoServer Download** via HTTP/WFS para downloads de arquivo.

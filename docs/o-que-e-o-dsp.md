@@ -39,7 +39,7 @@ Provavelmente sim, se:
 Provavelmente não é o caso certo, se:
 
 - [ ] Você não tem nenhuma base geoespacial estruturada para migrar — o DSP não cria dados, ele sincroniza e publica dados existentes.
-- [ ] Sua necessidade é só uso interno, sem exposição via API, mapa ou download — nesse caso o esforço de operar 3 bancos + GeoServer + módulos pode não compensar.
+- [ ] Sua necessidade é só uso interno, sem exposição via API, mapa ou download — nesse caso o esforço de operar 2 bancos + GeoServer + módulos pode não compensar.
 - [ ] Você precisa de uma solução sem Docker (embora isso seja possível, exigirá alterações manuais nos módulos e um processo mais longo de compreensão do código) ou possui requisitos de infraestrutura significativamente diferentes dos documentados neste guia.
 
 !!! tip "Próximo passo"

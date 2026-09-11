@@ -34,9 +34,9 @@ Detalhes completos: [rer-dsp-frontend](../modules/frontend.md).
 | `source` | Fonte JDBC da organização adotante |
 | `target` | `dsp-db` — negócio + bbox/centroid |
 | `geo-target` | `geoserver-db` — geometria completa |
-| `batch` | Metadados do Spring Batch (schema `BATCH_*`, inicializado manualmente) |
+| `batch` | Metadados do Spring Batch no schema `data_migration` do banco de destino (`dsp-db`) |
 
-Sem o core, você precisa criar manualmente os schemas de destino (`target` e `geo-target`) e aplicar o script `db/batch_metadata/01_spring_batch_schema.sql`. Detalhes completos: [rer-dsp-job-data-migration — Configuração e execução](../modules/job-data-migration/configuration.md).
+Sem o core, você precisa criar manualmente os schemas de destino (`target` e `geo-target`) e aplicar o script `db/batch_metadata/01_spring_batch_schema.sql` **no banco de destino** (cria `data_migration`). Detalhes completos: [rer-dsp-job-data-migration — Configuração e execução](../modules/job-data-migration/configuration.md).
 
 ## rer-dsp-core sem os demais módulos
 

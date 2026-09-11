@@ -32,7 +32,7 @@ flowchart LR
 
   srcDb --> jobMig
   jobMig -->|"negócio + bbox/centroid"| dspDb
-  jobMig -->|"geometria completa"| gsDb
+  jobMig -->|"geom completa"| gsDb
   core -.config/schema/build.-> jobMig
   core -.-> dspDb
   core -.-> gsDb

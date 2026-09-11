@@ -55,7 +55,7 @@ flowchart LR
 
   src --> job
   job -->|"negócio + bbox/centroid"| dspdb
-  job -->|"geometria completa"| exdb
+  job -->|"geom completa"| exdb
   exdb --> gsEx
   exdb --> gsDl
   dspdb --> be
@@ -136,7 +136,7 @@ flowchart TB
 | API | [rer-dsp-backend](https://github.com/Rural-Environmental-Registry/rer-dsp-backend) | Contratos REST, dados de negócio da plataforma                                        |
 | Integração / ETL | [rer-dsp-job-data-migration](https://github.com/Rural-Environmental-Registry/rer-dsp-job-data-migration) | Sincroniza atributos e geometria da fonte do adotante para os bancos do DSP           |
 | Publicação geo | GeoServer Exhibition + GeoServer Download | Exhibition: WMS/WFS de mapa; Download: WFS de exportação (mesmo geoserver-db) |
-| Persistência | PostgreSQL / PostGIS (3 bancos) | Dados operacionais, geometrias e metadados de execução                                |
+| Persistência | PostgreSQL / PostGIS (2 bancos no Compose) | `dsp-db` (negócio + schema `data_migration` do Spring Batch) e `dsp-geoserver-db` (geometrias) |
 | Documentação | [rer-dsp-docs](https://github.com/Rural-Environmental-Registry/rer-dsp-docs) (esta wiki) | Onboarding e padrões transversais de todos os repositórios                            |
 
 ---
@@ -145,8 +145,8 @@ flowchart TB
 
 O `rer-dsp-core` não contém código de aplicação/domínio — sua responsabilidade é exclusivamente de **orquestração e configuração**:
 
-- Sobe os 3 bancos Postgres/PostGIS (dsp-db, dsp-geoserver-db, dsp-job-migration-db), os dois GeoServers (Exhibition + Download) e o gateway nginx via Docker Compose.
-- Gera, a partir do wizard `./config.sh`, o `adopter-config.yaml` e os arquivos operacionais consumidos pelo backend (`installationConfig.json`, `mapLayersConfig.json`) e pelo job de migração (`application.yaml`).
+- Sobe os 2 bancos Postgres/PostGIS (`dsp-db`, `dsp-geoserver-db`) e os dois GeoServers (Exhibition + Download) via Docker Compose. Metadados do Spring Batch e o watermark ficam no schema `data_migration` do `dsp-db`.
+- Gera, a partir do wizard `./config.sh` (4 estágios + About opcional), o `adopter-config.yaml` e os arquivos operacionais consumidos pelo backend (`installationConfig.json`, `mapLayersConfig.json`) e pelo job de migração (`application.yaml`).
 - Orquestra o build e a subida do backend, frontend e job de migração.
 - Não tem dependência de runtime sobre os demais módulos — precisa deles apenas no momento do build/orquestração.
 
@@ -160,8 +160,8 @@ Detalhe operacional completo: [rer-dsp-core](../modules/core.md).
 flowchart LR
   A[(Fonte JDBC<br/>do adotante)] -->|1. Detecta mudanças| B[dsp-batch]
   B -->|2a. bbox + centroid| C[(dsp-db)]
-  B -->|2b. geometry| E[(geoserver-db)]
-  B -->|3. Metadados| D[(batch_metadata)]
+  B -->|2b. geom| E[(geoserver-db)]
+  B -->|3. BATCH_* + watermark| C
   E -->|4a. Publica mapa| GEx[GeoServer Exhibition]
   E -->|4b. Publica downloads| GDl[GeoServer Download]
   C -->|5. Consome| F[backend]
@@ -170,7 +170,7 @@ flowchart LR
   GEx -->|7. WMS| H
 ```
 
-1. **Ingestão / sync** — job de migração faz dual-write: `dsp-db` (negócio + bbox/centroid) e `geoserver-db` (geometria completa).
+1. **Ingestão / sync** — job de migração detecta mudanças por watermark e faz dual-write: `dsp-db` (negócio + bbox/centroid) e `geoserver-db` (`geom` completa).
 2. **Publicação** — GeoServer Exhibition e GeoServer Download leem **somente** `geoserver-db` (processos isolados).
 3. **Consumo via API** — backend lê `dsp-db` (sem polígonos completos) e consulta o **GeoServer Download** via WFS para downloads de arquivo. Essa chamada é interna à rede Docker e não passa pelo gateway.
 4. **Consumo via UI** — frontend consome a API do backend (busca, KPIs, downloads) e, para mapas, consome WMS/WFS do **GeoServer Exhibition**. Tudo o que sai do browser passa pelo **gateway**, na mesma origem.
@@ -196,7 +196,7 @@ No fluxo do job existem **quatro** papéis de datasource:
 | Origem | `spring.datasource.source` | Dados legados / cadastro a migrar |
 | Operacional | `spring.datasource.target` → `dsp-db` | Negócio + `boundary_box` + `centroid_coordinates` ([por quê](#fluxo-de-dados)) — **sem** `geometry` completa |
 | GeoServers | `spring.datasource.geo-target` → `dsp-geoserver-db` | Mesmas tabelas `dsp.*` **com** `geometry` completa |
-| Metadados | `spring.datasource.batch` | Controle Spring Batch (`BATCH_*`) |
+| Metadados | `spring.datasource.batch` | Controle Spring Batch (`BATCH_*`) e watermark (`BATCH_JOB_EXECUTION_SYNC_STATE`) |
 
 Contrato completo (colunas, leitores/escritores, SRID via YAML): [Bancos de dados](databases.md).
 

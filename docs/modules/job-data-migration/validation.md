@@ -6,7 +6,7 @@ Checklist e consultas para confirmar que a migração via `rer-dsp-job-data-migr
 
 | Momento | Objetivo |
 |---------|----------|
-| Após cada job (L1, L2, L3, área de interesse) | Isolar problemas por nível |
+| Após cada job (L1, L2, L3, área de interesse, camadas) | Isolar problemas por nível |
 | Após a sequência completa | Confirmar base pronta para o DSP |
 | Antes de liberar GeoServer/API | Evitar publicação de dados incompletos |
 
@@ -14,18 +14,20 @@ Checklist e consultas para confirmar que a migração via `rer-dsp-job-data-migr
 
 - [ ] Última execução do job com `status = COMPLETED`
 - [ ] Sem steps `FAILED` em `BATCH_STEP_EXECUTION`
-- [ ] Contagem do destino coerente com a origem (respeitando `where-clause` / estratégia)
+- [ ] Watermark gravado em `BATCH_JOB_EXECUTION_SYNC_STATE` para o `sync-key` do job
+- [ ] Contagem do destino coerente com a origem (respeitando `where-clause` e o recorte do watermark)
 - [ ] PK/unique presentes nas colunas de conflito
-- [ ] Amostra de geometrias com `ST_IsValid` e SRID conforme `srid` do YAML — em ambos os destinos (`dsp-db`: bbox/centroid; `geoserver-db`: geometry)
+- [ ] Amostra de geometrias com `ST_IsValid` e SRID conforme `srid` do YAML — em ambos os destinos (`dsp-db`: bbox/centroid; `geoserver-db`: `geom`)
 - [ ] FKs de hierarquia resolvidas (se aplicável)
 - [ ] Layer GeoServer aponta para a tabela/view correta
 
 ## 1. Status do Spring Batch
 
-Conecte no database de metadados (`spring.datasource.batch`):
+Conecte no banco de destino (`spring.datasource.target` / `dsp-db`), schema `data_migration`:
 
 ```bash
-psql -h localhost -p 6666 -U postgres -d batch_metadata
+psql -h localhost -p 6666 -U postgres -d dsp_db
+SET search_path TO data_migration;
 ```
 
 ### Últimas execuções
@@ -67,34 +69,48 @@ LIMIT 20;
 !!! tip "Nomes dos jobs"
     Use o nome do **bean** (`adminUnitLevel1GeoserverJob`, etc.), não a flag `execution-jobs` em kebab-case.
 
+### Watermark incremental
+
+```sql
+SELECT sync_key,
+       source_table,
+       watermark_last_event_at,
+       last_success_at,
+       last_orphan_check_at,
+       last_job_execution_id
+FROM data_migration.BATCH_JOB_EXECUTION_SYNC_STATE
+ORDER BY sync_key;
+```
+
+| Leitura | Significado |
+|---------|-------------|
+| `watermark_last_event_at` nulo | Ainda não houve carga `COMPLETED` com delta |
+| `last_orphan_check_at` antigo (> 24 h) | A próxima execução deve varrer órfãos |
+| Job `COMPLETED` mas watermark igual | Sem delta temporal (SKIP ou só órfãos) |
+
+Para reprocessar do zero um job, apague a linha do `sync-key` correspondente (e, se precisar, os dados do destino).
+
 ## 2. Contagens origem × destino
 
-Valide **os dois destinos** após cada job. Adapte schema/tabela ao seu YAML.
+Valide **os dois destinos** após cada job. Adapte schema/tabela ao seu YAML. No contrato oficial do DSP:
 
-### dsp-db (operacional — sem geometry completa)
+### dsp-db (operacional — sem geom completa)
 
 ```sql
 SELECT COUNT(*) AS dsp_db_count
-FROM target_admin_units.target_l1_continent
+FROM dsp.territory_level_1
 WHERE boundary_box IS NOT NULL;
 ```
 
 ### geoserver-db (geometria completa)
 
 ```sql
-SELECT COUNT(*) AS source_count
-FROM source_admin_units.source_l1_continents
-WHERE source_continent_geom IS NOT NULL;
-
 SELECT COUNT(*) AS geoserver_count
-FROM target_admin_units.target_l1_continent
-WHERE target_continent_geometry IS NOT NULL;
+FROM dsp.territory_level_1
+WHERE geom IS NOT NULL;
 ```
 
-| Estratégia | Expectativa |
-|------------|-------------|
-| `DEFAULT` | Destino reflete origem filtrada; órfãos removidos |
-| `DATE_RANGE` | Destino pode ter histórico fora do intervalo; valide o recorte de negócio |
+A primeira carga deve refletir a origem filtrada por `where-clause` e `creation-date-column IS NOT NULL`. Cargas seguintes só entram registros novos ou atualizados depois do watermark; órfãos saem no scan periódico.
 
 ## 3. Integridade de chave e órfãos
 
@@ -106,36 +122,27 @@ FROM information_schema.table_constraints tc
 JOIN information_schema.key_column_usage kcu
   ON tc.constraint_name = kcu.constraint_name
  AND tc.table_schema = kcu.table_schema
-WHERE tc.table_schema = 'target_admin_units'
-  AND tc.table_name = 'target_l1_continent'
+WHERE tc.table_schema = 'dsp'
+  AND tc.table_name = 'territory_level_1'
   AND tc.constraint_type IN ('PRIMARY KEY', 'UNIQUE');
 ```
 
-### Órfãos no destino (não deveriam existir após DEFAULT)
-
-```sql
-SELECT t.target_continent_id
-FROM target_admin_units.target_l1_continent t
-LEFT JOIN source_admin_units.source_l1_continents s
-  ON s.source_continent_pk = t.target_continent_id
-WHERE s.source_continent_pk IS NULL
-LIMIT 50;
-```
+IDs e FKs no destino oficial são `VARCHAR` (`territory_level_*`: `varchar(64)`; AOI/camadas: `varchar(255)` no `id`).
 
 ## 4. Geometrias
 
-### geoserver-db — geometry completa
+### geoserver-db — geom completa
 
 ```sql
 SELECT
   COUNT(*) AS total,
-  COUNT(*) FILTER (WHERE NOT ST_IsValid(target_continent_geometry)) AS invalidas,
-  COUNT(*) FILTER (WHERE ST_SRID(target_continent_geometry) <> 4326) AS srid_diferente,
-  COUNT(*) FILTER (WHERE target_continent_geometry IS NULL) AS nulas
-FROM target_admin_units.target_l1_continent;
+  COUNT(*) FILTER (WHERE NOT ST_IsValid(geom)) AS invalidas,
+  COUNT(*) FILTER (WHERE ST_SRID(geom) <> 4326) AS srid_diferente,
+  COUNT(*) FILTER (WHERE geom IS NULL) AS nulas
+FROM dsp.territory_level_1;
 ```
 
-Substitua `4326` pelo valor de `srid` do bloco YAML correspondente.
+Substitua `4326` pelo valor de `srid` do bloco YAML correspondente. AOI e camadas também usam `geom`.
 
 ### dsp-db — bbox e centroid
 
@@ -146,36 +153,36 @@ SELECT
   COUNT(*) FILTER (WHERE ST_SRID(boundary_box) <> 4326) AS bbox_srid_diferente,
   COUNT(*) FILTER (WHERE NOT ST_IsValid(centroid_coordinates)) AS centroid_invalidos,
   COUNT(*) FILTER (WHERE ST_SRID(centroid_coordinates) <> 4326) AS centroid_srid_diferente
-FROM target_admin_units.target_l1_continent;
+FROM dsp.territory_level_1;
 ```
 
 | Verificação | Critério de aceite |
 |-------------|---------------------|
 | `invalidas` | 0 (ou lista conhecida tratada à parte) |
-| `srid_diferente` | 0 em relação ao `srid` do YAML (validar em geoserver-db e em bbox/centroid do dsp-db) |
+| `srid_diferente` | 0 em relação ao `srid` do YAML |
 | `nulas` | Compatível com regras de negócio |
 
 ## 5. Hierarquia entre levels
 
 ```sql
-SELECT c.target_country_id, c.target_continent_ref
-FROM target_admin_units.target_l2_country c
-LEFT JOIN target_admin_units.target_l1_continent p
-  ON p.target_continent_id = c.target_continent_ref
-WHERE p.target_continent_id IS NULL
+SELECT c.id, c.parent_id
+FROM dsp.territory_level_2 c
+LEFT JOIN dsp.territory_level_1 p
+  ON p.id = c.parent_id
+WHERE p.id IS NULL
 LIMIT 50;
 ```
 
-Repita o padrão para level-3 → level-2.
+Repita o padrão para level-3 → level-2. AOI: `territory_level_3_id` deve existir em `dsp.territory_level_3`.
 
 ## 6. Paralelização e performance
 
 | Sinal | Interpretação |
 |-------|----------------|
-| `write_count` muito menor que esperado | Filtros de geometria / skips no writer |
+| `write_count` muito menor que esperado | Filtros de geometria / skips no writer / só delta do watermark |
 | Muitos erros de conexão | `thread-pool-size` maior que o pool Hikari |
 | Job lento com `thread-pool-size: 1` | Esperado em tabelas grandes |
-| `SKIP` imediato | Change detection sem mudanças — confirme se a origem realmente mudou |
+| `SKIP` imediato | Sem delta temporal — confirme se a origem realmente mudou depois do watermark |
 
 ## 7. GeoServer
 
@@ -191,9 +198,10 @@ Repita o padrão para level-3 → level-2.
 |---------|-----------------|----------|
 | `batch_job_instance does not exist` | Schema BATCH ausente | Rodar `01_spring_batch_schema.sql` |
 | Erro `ON CONFLICT` | Sem PK/unique no destino | Criar constraint |
-| Contagem destino = 0 | Job em SKIP, flags false, ou JDBC errado | Revisar `execution-jobs` e URLs |
-| Geometrias nulas | Mapping da coluna geom incorreto | Revisar `column-mapping` / `geometry-column` |
+| Contagem destino = 0 | Job em SKIP, flags false, JDBC errado ou watermark já avançado | Revisar `execution-jobs`, URLs e `SYNC_STATE` |
+| Geometrias nulas | Mapping da coluna geom incorreto | Revisar `geometry-column` / `column-mapping` (destino: `geom`) |
 | FK quebrada entre levels | Ordem invertida ou L1 incompleto | Reexecutar L1 → L2 → L3 |
 | App sobe e encerra "ok" sem dados | Nenhuma flag `true` | Habilitar ao menos um job |
+| Incremental “atrasado” | `updated-at-column` nula ou ausente | Preencher a coluna ou resetar o `sync-key` |
 
 Configuração completa: [Configuração e execução](configuration.md).

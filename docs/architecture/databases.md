@@ -1,11 +1,11 @@
 # Bancos de dados — contrato de papéis
 
-Contrato dos **quatro papéis** de datasource no fluxo de migração e consumo do DSP, após a separação geo.
+Contrato dos **três papéis de banco físico** no fluxo de migração e consumo do DSP, após a separação geo. Os metadados do Spring Batch e o watermark incremental ficam no schema `data_migration` dentro do `dsp-db` (não em um Postgres extra).
 
 ## Sumário
 
 - [Visão geral](#visao-geral)
-- [Os quatro papéis](#os-quatro-papeis)
+- [Os três bancos físicos (quatro papéis JDBC)](#os-tres-bancos-fisicos-quatro-papeis-jdbc)
 - [Colunas geo por banco](#colunas-geo-por-banco)
 - [Quem lê e quem escreve](#quem-le-e-quem-escreve)
 - [Dual-write do job](#dual-write-do-job)
@@ -24,17 +24,16 @@ Dois GeoServers leem esse mesmo geoserver-db: **Exhibition** (mapa) e **Download
 flowchart LR
   src[(source<br/>origem externa)]
   job[dsp-batch]
-  dsp[(dsp-db<br/>operacional)]
+  dsp[(dsp-db<br/>operacional + data_migration)]
   ex[(dsp-geoserver-db<br/>geometria completa)]
-  batch[(batch_metadata)]
   api[backend]
   gsEx[GeoServer Exhibition]
   gsDl[GeoServer Download]
 
   src -->|read| job
   job -->|bbox + centroid| dsp
-  job -->|geometry| ex
-  job -->|BATCH_*| batch
+  job -->|geom| ex
+  job -->|BATCH_* + watermark| dsp
   api -->|read| dsp
   api -->|WFS downloads| gsDl
   gsEx -->|read| ex
@@ -43,16 +42,18 @@ flowchart LR
 
 ---
 
-## Os quatro papéis
+## Os três bancos físicos (quatro papéis JDBC)
 
 | Papel | Serviço / prefixo | Conteúdo |
 |-------|-------------------|----------|
 | **source** | Fora do Compose (`spring.datasource.source`) | Banco da organização — fonte da migração |
 | **dsp-db** | `dsp-db` · `spring.datasource.target` | Dados de negócio + `boundary_box` + `centroid_coordinates` — **sem** coluna de geometria completa |
-| **geoserver-db** | `dsp-geoserver-db` · `spring.datasource.geo-target` | Mesmas tabelas `dsp.*` **com** coluna `geometry` completa |
-| **batch** | `dsp-job-migration-db` · `spring.datasource.batch` | Metadados Spring Batch (`BATCH_*`) |
+| **geoserver-db** | `dsp-geoserver-db` · `spring.datasource.geo-target` | Mesmas tabelas `dsp.*` **com** coluna `geom` completa |
+| **batch** | mesmo `dsp-db` · `spring.datasource.batch` · schema `data_migration` | Metadados Spring Batch (`BATCH_*`) e `BATCH_JOB_EXECUTION_SYNC_STATE` (watermark) |
 
-Ambos os bancos de destino (`dsp-db` e `geoserver-db`) expõem o schema `dsp` com as mesmas tabelas lógicas (`territory_level_1`, `territory_level_2`, `territory_level_3`, `area_of_interest`), mas com colunas geo distintas conforme a seção abaixo.
+O job mantém **quatro DataSources** no Java. `batch` e `target` apontam para o mesmo Postgres (`dsp-db`), com pools e transações separados. A URL de `batch` usa `currentSchema=data_migration`.
+
+Ambos os bancos de destino (`dsp-db` e `geoserver-db`) expõem o schema `dsp` com as mesmas tabelas lógicas (`territory_level_1`, `territory_level_2`, `territory_level_3`, `area_of_interest`), mas com colunas geo distintas conforme a seção abaixo. IDs e FKs são `VARCHAR` (`territory_level_*`: `varchar(64)`; AOI/camadas: `varchar(255)` no `id`).
 
 ---
 
@@ -60,12 +61,15 @@ Ambos os bancos de destino (`dsp-db` e `geoserver-db`) expõem o schema `dsp` co
 
 | Coluna | Tipo PostGIS | dsp-db | geoserver-db |
 |--------|--------------|--------|---------------|
-| Atributos de negócio (`id`, `name`, FKs, datas, etc.) | — | sim | sim |
-| `geometry` | `geometry(MultiPolygon)` (sem typmod de SRID no DDL) | **não** | **sim** |
+| Atributos de negócio (`id`, `name`, FKs, etc.) | — | sim | sim |
+| `created_at` / `updated_at` | `timestamptz` | sim | sim |
+| `geom` | `geometry` (UA: `MultiPolygon` no DDL do core; AOI/camadas: tipo da origem) | **não** | **sim** |
 | `boundary_box` | `geometry(Polygon)` | **sim** | **não** |
 | `centroid_coordinates` | `geometry(Point)` | **sim** | **não** |
 
-O writer do job deriva `boundary_box` e `centroid_coordinates` a partir da geometria lida na origem e grava só em `dsp-db`. O `geoserver-db` recebe a geometria completa.
+O writer do job deriva `boundary_box` e `centroid_coordinates` a partir da geometria lida na origem e grava só em `dsp-db`. O `geoserver-db` recebe a geometria completa em `geom`.
+
+`created_at` é obrigatório no destino (watermark). `updated_at` existe nas tabelas oficiais e é preenchido quando o YAML declara `updated-at-column`.
 
 ---
 
@@ -73,8 +77,8 @@ O writer do job deriva `boundary_box` e `centroid_coordinates` a partir da geome
 
 | Componente | source | dsp-db | geoserver-db | batch |
 |------------|--------|--------|---------------|-------|
-| `rer-dsp-job-data-migration` | leitura | escrita (bbox/centroid) | escrita (geometry) | escrita (`BATCH_*`) |
-| `rer-dsp-backend` / `rer-dsp-core` | — | leitura/escrita de negócio | — | — |
+| `rer-dsp-job-data-migration` | leitura | escrita (bbox/centroid) | escrita (`geom`) | escrita (`BATCH_*` + watermark) |
+| `rer-dsp-backend` / `rer-dsp-core` | — | leitura/escrita de negócio (schema `dsp`) | — | — |
 | GeoServer Exhibition | — | — | leitura (WMS/WFS mapa) | — |
 | GeoServer Download | — | — | leitura (WFS downloads via backend) | — |
 
@@ -84,11 +88,11 @@ Os dois GeoServers apontam **somente** para `dsp-geoserver-db` (mesmo PostGIS; p
 
 ## Dual-write do job
 
-Cada execução do job faz **1 source → 2 targets**:
+Cada execução do job faz **1 source → 2 targets** (camadas genéricas: só geo-target):
 
-1. Lê origem (atributos + geometria).
+1. Lê origem (atributos + geometria), recortada pelo watermark e pelo `where-clause`.
 2. Grava em `dsp-db`: atributos + `boundary_box` + `centroid_coordinates`.
-3. Grava em `geoserver-db`: atributos + `geometry` completa.
+3. Grava em `geoserver-db`: atributos + `geom` completa.
 
 ```mermaid
 flowchart LR
@@ -96,24 +100,27 @@ flowchart LR
 
   subgraph write ["2. Dual-write — UPSERT ON CONFLICT"]
     job -->|"atributos + boundary_box<br/>+ centroid_coordinates"| dspdb[(dsp-db)]
-    job -->|"atributos + geometry<br/>completa"| exdb[(geoserver-db)]
+    job -->|"atributos + geom<br/>completa"| exdb[(geoserver-db)]
   end
 ```
+
+Detalhe do watermark: [Visão geral do job](../modules/job-data-migration/overview.md#sincronizacao-incremental-watermark).
 
 ---
 
 ## SRID via YAML
 
-O SRID **não** é fixado em código nem no DDL (sem `geometry(MultiPolygon, 4674)`).
+O SRID **não** é fixado em código. No DDL oficial das unidades administrativas do core, `geom` não leva typmod de SRID. O DDL automático de AOI/camadas pode gravar o SRID no `CREATE TABLE`.
 
 | Onde | Como |
 |------|------|
-| DDL | `geometry` sem typmod de SRID |
-| Job | Cada bloco de job informa `srid` no YAML (ex.: `4674`, `4326`) |
-| Escrita | O writer aplica o SRID informado ao persistir (`ST_SetSRID`, `ST_GeomFromGeoJSON`, etc.) |
+| DDL das UA (core) | `geom` sem typmod de SRID |
+| Job | Cada bloco informa `srid` no YAML (ex.: `4674`, `4326`) |
+| Leitura (UA, AOI e camadas) | `ST_Transform` para o `srid` do YAML antes do GeoJSON |
+| Escrita | `ST_SetSRID(ST_Force2D(ST_GeomFromGeoJSON(?)), srid)` |
 | Validação | Conferir `ST_SRID(...)` contra o `srid` do YAML correspondente |
 
-Instalações distintas podem usar SRIDs diferentes por "layer", desde que o YAML e a origem estejam alinhados.
+Instalações distintas podem usar SRIDs diferentes por camada, desde que o YAML e a origem estejam alinhados.
 
 ---
 
@@ -121,9 +128,9 @@ Instalações distintas podem usar SRIDs diferentes por "layer", desde que o YAM
 
 | Papel | Prefixo Spring | Exemplo Compose (core) |
 |-------|----------------|------------------------|
-| source | `spring.datasource.source` | — (externo) |
+| source | `spring.datasource.source` | — (externo; `DSP_SOURCE_JDBC_URL`, `DSP_SOURCE_DB_USER`, `DSP_SOURCE_DB_PASSWORD`) |
 | dsp-db (target) | `spring.datasource.target` | `dsp-db` |
 | geoserver-db (geo-target) | `spring.datasource.geo-target` | `dsp-geoserver-db` |
-| batch | `spring.datasource.batch` | `dsp-job-migration-db` |
+| batch | `spring.datasource.batch` | `dsp-db` (schema `data_migration`; URL com `currentSchema=data_migration`) |
 
 Detalhe operacional: [Job data-migration — Configuração e execução](../modules/job-data-migration/configuration.md) · validação: [Validação pós-migração](../modules/job-data-migration/validation.md) · orquestração dos bancos: [rer-dsp-core](../modules/core.md).

@@ -36,7 +36,7 @@ flowchart LR
 
   src --> job
   job -->|negócio + bbox/centroid| dspdb
-  job -->|geometria completa| exdb
+  job -->|geom completa| exdb
   exdb --> gsEx
   exdb --> gsDl
   dspdb --> be
@@ -75,7 +75,7 @@ Seja honesto sobre estes pontos antes de decidir rodar módulos isoladamente:
 
 - **backend depende do core** para o schema `dsp` no Postgres e para os arquivos externos `installationConfig.json` e `mapLayersConfig.json`, normalmente gerados pelo `./config.sh` do core.
 - **frontend depende do backend** — precisa de uma URL de API válida (`VITE_DSP_API_URL` ou `public/config/env.json`); sem backend rodando, a maior parte da UI não funciona.
-- **job-data-migration depende do core** para o schema dos bancos `dsp-db`, `geoserver-db` e `batch`, e depende de uma fonte JDBC externa (do adotante) que o core não fornece.
+- **job-data-migration depende do core** para o schema dos bancos `dsp-db` (incluindo `data_migration` + watermark) e `geoserver-db`, e depende de uma fonte JDBC externa (do adotante) que o core não fornece.
 - **core não tem dependência de runtime** sobre os outros três — ele só precisa deles no momento do build/orquestração Docker (paths configurados via `DSP_BACKEND_PATH`, `DSP_FRONTEND_PATH`, `DSP_JOB_MIGRATION_PATH`).
 
 ## Quais tecnologias são utilizadas?

@@ -13,9 +13,10 @@ sequenceDiagram
   participant Be as rer-dsp-backend
   participant Fe as rer-dsp-frontend
 
-  Job->>Src: Lê atributos + geometria
+  Job->>Src: Lê atributos + geometria (filtro watermark)
   Job->>DspDb: Grava negócio + bbox/centroid (UPSERT)
-  Job->>ExDb: Grava atributos + geometria completa (UPSERT)
+  Job->>ExDb: Grava atributos + geom completa (UPSERT)
+  Job->>DspDb: Avança watermark em data_migration
   GsEx->>ExDb: Publica camadas WMS/WFS (mapa)
   GsDl->>ExDb: Publica as mesmas camadas para WFS (downloads)
   Be->>DspDb: Lê dados de negócio (sem geometria completa)
@@ -27,10 +28,11 @@ sequenceDiagram
 
 ## Explicação passo a passo
 
-1. **Job lê a fonte JDBC do adotante.** O `rer-dsp-job-data-migration` conecta-se ao banco de origem da organização (datasource `source`) e lê atributos e geometrias das tabelas configuradas.
-2. **Dual-write nos dois destinos.** Cada execução grava simultaneamente em:
+1. **Job lê a fonte JDBC do adotante.** O `rer-dsp-job-data-migration` conecta-se ao banco de origem (datasource `source`) e lê atributos e geometrias no recorte do **watermark** (`creation-date-column` + `updated-at-column` opcional) e do `where-clause`.
+2. **Dual-write nos dois destinos.** Cada execução com delta grava simultaneamente em:
    - `dsp-db` (datasource `target`): dados de negócio, `boundary_box` e `centroid_coordinates` — **sem** a geometria completa.
-   - `geoserver-db` (datasource `geo-target`): os mesmos atributos, mas **com** a geometria completa.
+   - `geoserver-db` (datasource `geo-target`): os mesmos atributos, mas **com** `geom` completa.
+   O watermark só avança em `data_migration.BATCH_JOB_EXECUTION_SYNC_STATE` se o job terminar `COMPLETED`.
 3. **Dois GeoServers leem o geoserver-db.** Ambos publicam FeatureTypes a partir do mesmo `dsp-geoserver-db` e do mesmo `mapLayersConfig.json`:
    - **GeoServer Exhibition** — WMS/WFS para navegação no mapa.
    - **GeoServer Download** — WFS usado só pelo backend nas exportações (CSV).

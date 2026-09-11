@@ -6,21 +6,19 @@ Guia didático do módulo de **camadas geográficas** (`batch.layers`) do job [`
 
 ## O que este módulo faz
 
-O job lê **tabelas PostGIS desconhecidas** no banco de origem e replica suas feições no banco **geo-target** (exibição / WMS).
+O job lê **tabelas PostGIS extras** no banco de origem e replica suas feições no banco **geo-target** (exibição / WMS).
 
-Você **não** precisa descrever coluna por coluna no YAML, ao contrário dos jobs fixos (L1/L2/L3/AOI). O job descobre a estrutura sozinho e cria a tabela de destino.
+Você informa as colunas de papel (PK, vínculo com AOI, data de criação, geometria). O job descobre o restante do schema e cria a tabela de destino.
 
 | Você informa no YAML | O job descobre sozinho |
 |----------------------|------------------------|
-| Nome da tabela de origem | Colunas e tipos |
-| Coluna que liga à área de interesse | Chave primária |
-| (Opcional) SRID, filtros, nomes | Coluna de geometria e índices |
+| Nome da tabela de origem | Demais colunas e tipos (via introspecção + `additional-columns`) |
+| PK, vínculo com AOI, criação, geometria | Índices no destino |
+| (Opcional) SRID, filtros, label, extras | — |
 
 ---
 
 ## Conceitos importantes
-
-Antes de configurar, vale alinhar a nomenclatura:
 
 | Termo | Significado | Exemplo |
 |-------|-------------|---------|
@@ -29,6 +27,8 @@ Antes de configurar, vale alinhar a nomenclatura:
 | **Área de interesse (AOI)** | Entidade canônica no DSP | `dsp.area_of_interest` |
 
 **Premissa:** cada feição pertence a **uma** área de interesse. A coluna que faz essa ligação na origem é declarada no YAML; no destino ela vira sempre `area_of_interest_id`.
+
+No wizard do core (`adopter-config.yaml`), esse campo se chama `parent_key` e é traduzido para `area-of-interest-id-column`.
 
 ---
 
@@ -50,13 +50,15 @@ flowchart LR
 | **DSP DB** (`target`) | Jobs fixos (unidades administrativas, AOI) | Dados de negócio da API |
 | **Geo-target** (`geo-target`) | Jobs fixos **e** camadas genéricas | Geometrias para mapa |
 
-As camadas genéricas **só** escrevem no geo-target. O schema e o nome da tabela de destino são fixos:
+As camadas genéricas **só** escrevem no geo-target. O destino vem do `layer-name` resolvido (se omitido, o nome da tabela de origem), com hífen virando underscore:
 
 ```text
-geo-target → dsp.<nome_da_tabela_na_origem>
+geo-target → dsp.<layer_name_normalizado>
 ```
 
-Exemplo: origem `conservation.rivers` → destino `dsp.rivers`.
+Exemplos: origem `conservation.rivers` sem `layer-name` → `dsp.rivers`; `layer-name: tipo-a` → `dsp.tipo_a`. A mesma `source-table` pode aparecer em mais de uma entrada se os destinos forem distintos.
+
+Colunas canônicas no destino: `id` (`varchar(255)`), `area_of_interest_id` (`varchar(255)`), `created_at` (`timestamptz`), `updated_at` (se houver), `label` (se houver), `geom`. Só **uma** geometria é migrada — a informada em `geometry-column`.
 
 ---
 
@@ -79,10 +81,11 @@ Na prática, o `JobRunner` dos jobs fixos roda **antes** do runner de camadas (`
 - [ ] Banco de **origem** com PostGIS e tabelas a migrar
 - [ ] Banco **geo-target** acessível (`spring.datasource.geo-target`)
 - [ ] Cada tabela de origem com **PK simples** (uma coluna)
-- [ ] Pelo menos **uma coluna de geometria**
+- [ ] Coluna de geometria informada no YAML
 - [ ] Coluna de vínculo com AOI preenchida nas feições
+- [ ] `creation-date-column` preenchida (watermark)
 - [ ] Job de **área de interesse** já executado (valores de FK válidos)
-- [ ] Schema Spring Batch criado no banco `batch`
+- [ ] Schema Spring Batch criado no `dsp-db` (`data_migration`)
 
 ---
 
@@ -107,17 +110,23 @@ spring:
 batch:
   layers:
     - source-table: conservation.rivers
+      primary-key: feature_id
       area-of-interest-id-column: conservation_unit_id
+      creation-date-column: created_at
+      geometry-column: geom
       layer-name: rivers
       srid: 4674
 ```
 
-Só **duas** propriedades são obrigatórias:
+Quadro completo origem → destino (incluindo extras): [Contrato de colunas](configuration.md#contrato-de-colunas).
 
 | Propriedade | Obrigatória | Descrição |
 |-------------|-------------|-----------|
-| `source-table` | sim | Tabela de origem no formato `schema.tabela` |
+| `source-table` | sim | Tabela de origem no formato `schema.tabela` (exatamente um `.`) |
+| `primary-key` | sim | PK simples na origem |
 | `area-of-interest-id-column` | sim | Coluna na origem que identifica a AOI da feição |
+| `creation-date-column` | sim | Coluna de criação — base do watermark |
+| `geometry-column` | sim | Qual coluna da origem vira `geom` no destino |
 
 ### 3. Habilitar a execução
 
@@ -128,7 +137,7 @@ execution-jobs:
 
 ### 4. Paralelização (opcional)
 
-O nome do job segue o padrão `layerMigrationJob_` + chave da camada (`dsp_<tabela>`):
+O nome do job segue o padrão `layerMigrationJob_` + chave da camada (`dsp_<nome_físico>`):
 
 ```yaml
 parallelization:
@@ -149,12 +158,16 @@ Se não houver entrada para uma camada, o job usa valores padrão.
 
 | Propriedade | Default | Quando usar |
 |-------------|---------|-------------|
-| `layer-name` | nome da tabela | Nome amigável nos logs (não altera o destino) |
-| `srid` | descoberto na origem | Forçar SRID quando a introspecção não encontrar |
-| `primary-key` | PK do banco | Tabela sem PK declarada no PostgreSQL |
-| `geometry-column` | via `geometry_columns` | Tabela com mais de uma geometria |
-| `where-clause` | `1=1` | Migrar só um subconjunto de feições |
-| `enabled` | `true` | Desligar uma camada sem remover do YAML |
+| `layer-name` | nome da tabela | Identidade WMS (`dsp:<nome>`) e base do destino físico (`dsp.<nome>` com hífen → `_`) |
+| `srid` | descoberto na origem | SRID do destino. Na leitura, `ST_Transform` reprojeta a geometria da origem para este valor (igual UA/AOI) |
+| `updated-at-column` | — | Incremental também por atualização |
+| `label-column` | — | Texto exibido (`label` no destino) |
+| `additional-columns` | `[]` | Extras copiados com o mesmo nome |
+| `where-clause` | `1=1` | Subconjunto de feições (detecção, órfãos e escrita) |
+| `source-timezone` | `batch.source-timezone` | Colunas temporais sem offset |
+| `enabled` | `true` | Só no `application.yaml` **editado manualmente**. No wizard/`adopter-config.yaml`, remova a camada de `etl.layers[]` em vez de usar `enabled` |
+
+Se a tabela destino **já existir**, o job exige `created_at timestamptz` nela (`CREATE TABLE IF NOT EXISTS` **não** altera tabela existente).
 
 ---
 
@@ -164,9 +177,9 @@ Cada camada gera **um job Spring Batch** independente.
 
 ```mermaid
 flowchart TD
-  A[Setup] --> B[Change detection]
-  B --> C{Há mudanças?}
-  C -->|Não| D[Fim — SKIP]
+  A[Setup] --> B[Change detection por watermark]
+  B --> C{Há delta temporal?}
+  C -->|Não| D[Fim — SKIP<br/>órfãos já podem ter sido apagados]
   C -->|Sim| E[Leitura particionada]
   E --> F[UPSERT no geo-target]
 ```
@@ -176,28 +189,26 @@ flowchart TD
 1. Valida se a tabela existe na origem
 2. Descobre colunas, PK, geometria, SRID e índices
 3. Cria `CREATE SCHEMA IF NOT EXISTS dsp` no geo-target
-4. Cria a tabela `dsp.<nome>` (se ainda não existir)
-5. Cria índice GIST na geometria e índice em `area_of_interest_id`
+4. Cria a tabela `dsp.<nome_físico>` (se ainda não existir)
+5. Cria índice GIST em `geom` e índice em `area_of_interest_id`
 
 ### Passo 2 — Change detection
 
-Compara origem × geo-target:
+Mesmo motor das unidades administrativas e da AOI:
 
-- **Novo** — PK existe só na origem
-- **Modificado** — mesma PK, atributos ou geometria diferentes
-- **Removido** — PK existe só no geo-target → **DELETE** no destino
-
-Se nada mudou desde a última execução, o job **pula** a carga (economiza tempo).
+- **Delta** — registros com criação (ou `updated_at`) depois do watermark gravado em `BATCH_JOB_EXECUTION_SYNC_STATE`
+- **Órfãos** — PK só no geo-target → **DELETE** (scan a cada 24 h)
+- Sem delta → **SKIP** (mesmo que órfãos tenham sido apagados)
 
 !!! note "Escopo da change detection"
     A remoção de órfãos acontece **somente no geo-target**. O DSP DB não é afetado por este módulo.
 
 ### Passo 3 — Carga (UPSERT)
 
-- Lê feições da origem em páginas (com particionamento quando a PK é numérica)
+- Lê feições da origem em páginas (particionamento quando a PK é numérica ou VARCHAR numérico)
 - Grava no geo-target com `INSERT ... ON CONFLICT DO UPDATE`
 - Renomeia a coluna de vínculo: ex. `conservation_unit_id` → `area_of_interest_id`
-- Geometrias com Z/M (Point Z) são achatadas para 2D (`ST_Force2D`) — adequado para WMS
+- Geometrias com Z/M são achatadas para 2D (`ST_Force2D`)
 
 ---
 
@@ -207,20 +218,20 @@ Se nada mudou desde a última execução, o job **pula** a carga (economiza temp
 batch:
   layers:
     - source-table: conservation.rivers
+      primary-key: feature_id
       area-of-interest-id-column: conservation_unit_id
+      creation-date-column: created_at
+      geometry-column: geom
       layer-name: rivers
       srid: 4674
 
     - source-table: conservation.lakes
+      primary-key: feature_id
       area-of-interest-id-column: conservation_unit_id
+      creation-date-column: created_at
+      geometry-column: geom
       layer-name: lakes
       srid: 4674
-
-    - source-table: conservation.forest_areas
-      area-of-interest-id-column: conservation_unit_id
-      layer-name: forest-areas
-      srid: 4674
-      enabled: false   # declarada, mas não roda
 
 execution-jobs:
   admin-unit-level-1-geoserver-job: true
@@ -250,8 +261,8 @@ parallelization:
 Na raiz do repositório `rer-dsp-job-data-migration`:
 
 ```bash
-# 1. Metadados Spring Batch (uma vez)
-psql -h localhost -U postgres -d batch_metadata \
+# 1. Metadados Spring Batch no banco de destino (uma vez)
+psql -h localhost -U postgres -d dsp_db \
   -f src/main/resources/db/batch_metadata/01_spring_batch_schema.sql
 
 # 2. Subir o job
@@ -276,16 +287,21 @@ Para rodar **só** as camadas (jobs fixos desligados):
 No geo-target, confira se a tabela foi criada e populada:
 
 ```sql
--- Tabela existe?
 SELECT COUNT(*) FROM dsp.rivers;
 
--- Feições ligadas a AOI?
 SELECT area_of_interest_id, COUNT(*)
 FROM dsp.rivers
 GROUP BY area_of_interest_id;
 
--- Geometrias válidas?
 SELECT COUNT(*) FROM dsp.rivers WHERE geom IS NOT NULL;
+```
+
+Watermark da camada (no `dsp-db`):
+
+```sql
+SELECT sync_key, watermark_last_event_at, last_success_at, last_orphan_check_at
+FROM data_migration.BATCH_JOB_EXECUTION_SYNC_STATE
+WHERE source_table LIKE '%rivers%';
 ```
 
 Logs úteis (pacote `br.car.dsp_batch`):
@@ -293,7 +309,7 @@ Logs úteis (pacote `br.car.dsp_batch`):
 - `Introspection completed for ...` — estrutura descoberta
 - `Target table ready: dsp.rivers` — DDL aplicado
 - `Upserted N features into geo-target dsp.rivers` — carga concluída
-- `No changes detected` — reexecução sem alterações (SKIP)
+- `No changes detected` — reexecução sem delta temporal (SKIP)
 
 ---
 
@@ -304,7 +320,8 @@ Logs úteis (pacote `br.car.dsp_batch`):
 | PK composta | Erro — não suportado |
 | PK UUID / texto não numérico | Migra em partição única (sem paralelismo por faixa) |
 | Tabela ganha colunas novas depois | `CREATE TABLE IF NOT EXISTS` **não** altera tabela existente |
-| Múltiplas geometrias | Usa a primeira encontrada (ou a declarada em `geometry-column`) |
+| Múltiplas geometrias na origem | Só a coluna de `geometry-column` é migrada; as demais são ignoradas |
+| SRID origem ≠ YAML | `ST_Transform` na leitura para o `srid` do YAML (igual UA/AOI) |
 | GeoServer / cache | Este módulo **não** dispara refresh de cache |
 
 ---
@@ -314,12 +331,14 @@ Logs úteis (pacote `br.car.dsp_batch`):
 | Mensagem / sintoma | Causa provável | O que fazer |
 |--------------------|----------------|-------------|
 | `area-of-interest-id-column is required` | YAML incompleto | Informe a coluna de vínculo com AOI |
+| `creation-date-column` ausente | YAML incompleto | Informe a coluna de criação |
 | `Source table not found` | Schema/tabela errados | Confira `source-table` e permissões |
 | `has no PRIMARY KEY` | Tabela sem PK | Declare `primary-key` no YAML |
 | `SRID not found` | Geometria vazia ou sem SRID | Informe `srid` explicitamente |
-| Job sobe e não migra camadas | `layer-jobs: false` ou `enabled: false` | Confira flags |
+| Job sobe e não migra camadas | `layer-jobs: false` ou camada com `enabled: false` no YAML manual | Confira flags; no wizard, remova a camada de `etl.layers[]` |
 | FK inválida no mapa | AOI não migrada antes | Rode o job de area-of-interest primeiro |
 | `ON CONFLICT` falha | PK ausente no destino | Apague a tabela destino e rode Setup de novo |
+| Destino existente sem `created_at timestamptz` | Tabela antiga | Ajuste a coluna ou recrie a tabela |
 
 ---
 
@@ -327,16 +346,31 @@ Logs úteis (pacote `br.car.dsp_batch`):
 
 | | Jobs fixos (UA, AOI) | Camadas genéricas |
 |--|----------------------|-------------------|
-| Configuração | Coluna a coluna no YAML | Só tabela + coluna AOI |
+| Configuração | UA: coluna a coluna; AOI: papéis canônicos | Tabela + PK + AOI + criação + geometria |
 | Destino | DSP DB **e** geo-target | **Só** geo-target |
-| DDL | Manual / pré-existente | Criado automaticamente |
-| Mapeamento de colunas | `column-mapping` explícito | Espelha origem (exceto AOI → `area_of_interest_id`) |
+| DDL | UA: SQL do core; AOI: automático | Criado automaticamente |
+| Mapeamento | UA: `column-mapping`; AOI: canônico | Espelha origem (exceto papéis → `id` / `area_of_interest_id` / `geom`) |
+| Change detection | Watermark temporal | Watermark temporal |
 
 ---
 
 ## No wizard do rer-dsp-core
 
-No wizard `./config.sh` do `rer-dsp-core`, essas camadas são configuradas no estágio **5/5 — Jobs de migração** (seção `etl.layers` do `adopter-config.yaml`), que o core traduz para `batch.layers` neste arquivo. Detalhe do wizard: [rer-dsp-core](../core.md#configsh).
+No estágio **2/4** (`etl.layers[]` do `adopter-config.yaml`), cada camada é configurada **uma vez** e alimenta migração, mapa e downloads:
+
+| Campo wizard / YAML | Uso |
+|---------------------|-----|
+| `source_table`, `primary_key`, `parent_key` (FK → AOI), colunas temporais, `geometry_column`, `where_clause`, `srid` | Job (`application.yaml`) |
+| `layer_name` | Id técnico WMS (`dsp:<nome>`) e tabela destino `dsp.<nome>` |
+| `display_name` | Rótulo humano no seletor de camadas e na tela Downloads |
+| `group_key` | Grupo no mapa (existente ou novo) |
+| `active_default`, `color`, `fill_color` | Camada ligada por padrão e estilo WMS |
+
+A mesma `source_table` pode repetir com **`layer_name` diferente**; o wizard reaproveita o mapeamento de colunas da camada anterior com a mesma origem.
+
+Para desligar uma camada no fluxo do wizard, **remova-a** de `etl.layers[]` e reaplique `./config.sh` — o campo `enabled` não é aceito no `adopter-config.yaml`.
+
+Detalhe completo do wizard: [rer-dsp-core](../core.md#configsh).
 
 ---
 
@@ -345,5 +379,5 @@ No wizard `./config.sh` do `rer-dsp-core`, essas camadas são configuradas no es
 | Documento | Conteúdo |
 |-----------|----------|
 | [Configuração e execução](configuration.md) | Stack, datasources, jobs fixos, comandos |
-| [Visão geral](overview.md) | Ordem e estratégias de change detection |
+| [Visão geral](overview.md) | Ordem e watermark |
 | [Validação pós-migração](validation.md) | Checklist pós-migração |

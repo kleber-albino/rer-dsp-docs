@@ -12,8 +12,8 @@ Este guia é voltado a um **administrador de infraestrutura** responsável por c
 | Git           | se os repositórios irmãos ainda não estiverem clonados; os scripts podem cloná-los automaticamente                       |
 | Docker        | 24+ com Compose v2                                                                                                              |
 | Python        | Python 3 (usado pelo wizard `./config.sh`)                                                                                     |
-| Portas usadas | Gateway `8026` (todo o tráfego HTTP), DSP DB `20654`, Job migration DB `20655`, GeoServer DB `20656` |
-| Armazenamento | Volumes persistentes para os 3 bancos Postgres/PostGIS (dsp-db, dsp-geoserver-db, dsp-job-migration-db)              |
+| Portas usadas | Gateway `8026` (todo o tráfego HTTP), DSP DB `20654`, GeoServer DB `20656` |
+| Armazenamento | Volumes persistentes para os 2 bancos Postgres/PostGIS (`dsp-db`, `dsp-geoserver-db`); metadados Spring Batch no schema `data_migration` dentro do `dsp-db` |
 
 ## Fluxo de instalação
 
@@ -22,7 +22,7 @@ flowchart LR
   r["Passo 1<br/>Organizar os repositórios"] --> e["Passo 2<br/>Entrar no rer-dsp-core"]
   e --> a["Passo 3<br/>./config.sh (wizard)"]
   a --> b["gera adopter-config.yaml<br/>e arquivos operacionais"]
-  b --> c["Passo 4<br/>./setup.sh (opção 2 ou 3)"]
+  b --> c["Passo 4<br/>./setup.sh (opção 2)"]
   c --> d["Passo 5<br/>./start.sh — sobe a stack"]
 ```
 
@@ -69,27 +69,40 @@ cd rer-dsp-core
 
 Não é necessário criar nem copiar o `.env` manualmente. O arquivo é gerado automaticamente na primeira execução de `./config.sh` ou `./setup.sh`, a partir de `.env.example`, quando ainda não existir.
 
-Se precisar personalizar portas, credenciais dos 3 bancos ou paths dos repositórios irmãos antes de subir a stack, edite o `.env` **depois** que um desses scripts o criar. As variáveis do adotante (fonte JDBC, SRID, modo de migração) são preenchidas no Passo 3 pelo wizard — não é necessário editá-las manualmente no `.env`.
+Se precisar personalizar portas, credenciais dos 2 bancos ou paths dos repositórios irmãos antes de subir a stack, edite o `.env` **depois** que um desses scripts o criar. As variáveis do adotante (fonte JDBC, SRID) são preenchidas no Passo 3 pelo wizard; o modo de migração é escolhido no Passo 4 (`./setup.sh`).
 
 ### Passo 3 — `./config.sh`
 
-Wizard interativo em 5 estágios que gera `config/adopter/adopter-config.yaml` e, a partir dele, os arquivos operacionais JSON/YAML consumidos pelos demais módulos (configuração de instalação do backend, camadas de mapa, catálogo de temas de download, `application.yaml` do job de migração). Cada pergunta explica o campo e seu impacto antes de pedir o valor; você também pode editar o `adopter-config.yaml` diretamente, sem passar pelo wizard. Se um `adopter-config.yaml` já existir, o script oferece reaplicar, editar (reabre o wizard com os valores atuais) ou recomeçar do template.
+Wizard interativo em **4 estágios** (+ About opcional) que gera `config/adopter/adopter-config.yaml` e, a partir dele, os arquivos operacionais JSON/YAML (instalação do backend, camadas de mapa, temas de download, `application.yaml` do job). Você também pode trazer um YAML pronto ou editá-lo manualmente e **reaplicar**. Detalhamento: [rer-dsp-core](../modules/core.md#configsh).
 
-Depois dos 5 estágios, o wizard ainda pergunta se você quer habilitar a página About customizada do frontend — título do banner, quantidade de abas e, para cada aba, título e arquivo `.md` (em `config/about/`) — gerando `config/about/about-config.json`. Detalhamento estágio a estágio: [rer-dsp-core](../modules/core.md#configsh).
+!!! tip "Rebuild após configurar"
+    Os arquivos gerados são copiados para as imagens Docker no build. Depois de `./config.sh`, rode `./setup.sh` ou `./start.sh` para que backend, GeoServers e job usem a configuração nova.
 
 ### Passo 4 — `./setup.sh`
 
-Escolha a opção adequada ao seu momento:
+Escolha a opção adequada:
 
-- **Opção 2 — migração real via JDBC**: copia os dados da sua fonte para os bancos do DSP. Em seguida pergunta como isso deve se comportar depois da primeira vez:
-    - **`once`** (execução única): a cópia roda uma vez, e o container que fez a migração é **desligado e removido** ao terminar. Se os dados de origem mudarem depois, ninguém copia essas mudanças automaticamente — é preciso rodar a migração de novo manualmente.
-    - **`continuous`**: realiza a migração inicial normalmente, porém o container do job **permanece em execução** em vez de ser encerrado. A partir desse momento, ele executa sincronizações periódicas conforme configurado, identificando e migrando automaticamente os dados da origem que foram criados, alterados ou removidos após a primeira execução.
-- **Opção 3 — sem migração**: sobe a stack (sem job e seu banco) e aplica a configuração do adotante (labels, camadas, SRIDs) mas mantém os bancos vazios. Útil para testar a instalação sem migrar dados reais, ou caso o adotante queira migrar e/ou desenvolver sua própria rotina de migração fora do DSP.
-- **Opção 4 — status/cleanup**: mostra status dos containers e URLs, ou remove os recursos Docker do projeto; não sobe nem migra nada.
+- **Opção 1 — Demonstração**: seed sintético, sem JDBC (veja [Começando rápido](../getting-started.md)).
+- **Opção 2 — Adotante real (ETL)**: requer `./config.sh`. O script pergunta em sequência:
+    1. **Run now** ou **Schedule for later** (quando roda a carga inicial)
+    2. **One-time** ou **Continuous** (comportamento depois da primeira carga)
+
+Combinações típicas:
+
+| Escolhas | Modo | Resumo |
+|----------|------|--------|
+| Run now + One-time | `once` | Migra no setup; job desliga |
+| Schedule + One-time | `scheduled-once` | Espera data/hora; migra uma vez; publica GeoServers |
+| Run now + Continuous | `continuous` | Migra no setup; supercronic nos ciclos seguintes |
+| Schedule + Continuous | `continuous` + agenda | Primeira carga na data; depois supercronic |
+
+No **Continuous**, o setup pergunta a frequência (diária, a cada N horas ou N minutos) e grava `DSP_MIGRATION_CRON`. Fuso: `DSP_MIGRATION_TZ`.
+
+- **Opção 3 — status/cleanup**: inspeciona ou remove recursos Docker; não migra.
 
 ### Passo 5 — `./start.sh`
 
-Usado após a instalação inicial. Verifica os repositórios irmãos, garante as configurações de instalação/mapa, sobe os bancos (mantendo a stack de migração ativa se o modo for `continuous`), garante os GeoServers Exhibition e Download no ar, builda/sobe backend + frontend e por último sobe o gateway. A publicação das camadas nos GeoServers é feita pelo `./setup.sh`; o start apenas assegura que os containers estão ligados (sem rebuild forçado). **Nunca** roda migração — isso é sempre feito pelo `./setup.sh`.
+Usado após a instalação inicial. Verifica repositórios irmãos, garante configs, sobe bancos (mantendo o serviço de migração se `continuous` ou `scheduled-once` pendente), builda/sobe backend, frontend e gateway. **Nunca** dispara carga imediata — migração fica no `./setup.sh` ou no cron do job.
 
 Ao final, a stack fica acessível em uma única porta:
 
