@@ -13,6 +13,7 @@ flowchart TD
   fe["rer-dsp-frontend"]
   job["rer-dsp-job-data-migration"]
   geoFile["rer-dsp-job-geo-file-generation"]
+  storage["dsp-object-storage (SeaweedFS)"]
   gs["2 GeoServers + 2 bancos Postgres/PostGIS"]
   gw["dsp-gateway (nginx)"]
 
@@ -20,6 +21,7 @@ flowchart TD
   core --> fe
   core --> job
   core --> geoFile
+  core --> storage
   core --> gs
   core --> gw
 ```
@@ -31,7 +33,8 @@ flowchart TD
 - SQL de inicialização dos bancos.
 - GeoServer Exhibition (mapa) e GeoServer Download (WFS de exportação).
 - Gateway nginx (`dsp-gateway`) como porta de entrada única da stack.
-- Job de migração (`dsp-job-migration`, profile `migration`) e job geo-file (`dsp-job-geo-file-generation`, profile `geo-file`).
+- Object storage SeaweedFS (`dsp-object-storage`, profile `object-storage`) e job geo-file (`dsp-job-geo-file-generation`, mesmo profile) — obrigatórios no adotante real; a Demo Brasil não sobe esses serviços.
+- Job de migração (`dsp-job-migration`, profile `migration`).
 - Três scripts operacionais: `./config.sh`, `./setup.sh`, `./start.sh`.
 - Clone automático dos repositórios irmãos quando ausentes (com preview da estrutura de pastas antes da confirmação).
 
@@ -130,7 +133,7 @@ Ao final de qualquer opção real (2 ou 3), o script também publica as camadas 
 
 1. Verifica os repositórios irmãos `rer-dsp-backend` e `rer-dsp-frontend` (paths via `DSP_BACKEND_PATH`/`DSP_FRONTEND_PATH`, default `../rer-dsp-backend` e `../rer-dsp-frontend`).
 2. Garante a configuração de instalação (`installationConfig.json`) e de camadas de mapa.
-3. Sobe os bancos (sem migração). Se `DSP_MIGRATION_EXECUTION_MODE=continuous`, mantém o job de migração ativo. Se `DSP_OBJECT_STORAGE_ENDPOINT` estiver definido, sobe também o job geo-file (`profile=geo-file`).
+3. Sobe os bancos (sem migração). Se `DSP_MIGRATION_EXECUTION_MODE=continuous`, mantém o job de migração ativo. No adotante real, sobe também `dsp-object-storage` e o job geo-file (`profile=object-storage`). A Demo Brasil não sobe object storage.
 4. Garante o GeoServer Exhibition e o GeoServer Download no ar (rebuild para atualizar o JSON de mapa na imagem; sem republicação de camadas — isso fica no `./setup.sh`) e builda/sobe os containers `dsp-backend` e `dsp-frontend`.
 5. Rebuilda/sobe o `dsp-gateway` e espera o health responder.
 6. Imprime um resumo da stack e as URLs de cada serviço.
@@ -144,7 +147,8 @@ Só os bancos publicam porta no host. Os serviços HTTP ficam acessíveis apenas
 | dsp-db | porta 20654 | Banco operacional — negócio + bbox/centroid. Metadados Spring Batch: schema `data_migration` (job de migração) e schema `geo_file_generation` (job geo-file) |
 | GeoServer DB (dsp-geoserver-db) | porta 20656 | Geometria completa `dsp.*` |
 | Job de migração (`dsp-job-migration`) | profile `migration`, sem porta HTTP | ETL da origem JDBC para dsp-db e geoserver-db |
-| Job geo-file (`dsp-job-geo-file-generation`) | profile `geo-file`, sem porta HTTP | Pré-gera CSV de download no object storage. Sobe se `DSP_OBJECT_STORAGE_ENDPOINT` estiver definido |
+| Object storage (`dsp-object-storage`) | profile `object-storage`, porta host `8333` (opcional) | SeaweedFS (`weed mini`) — API S3 do DSP. Obrigatório no adotante real |
+| Job geo-file (`dsp-job-geo-file-generation`) | profile `object-storage`, sem porta HTTP | Pré-gera CSV de download no SeaweedFS. Obrigatório no adotante real |
 | GeoServer Exhibition | via gateway, `/geoserver-exhibition/` | WMS/WFS de mapa a partir do geoserver-db |
 | GeoServer Download | via gateway, `/geoserver-download/` | WFS de downloads (consumido pelo backend) |
 
@@ -158,7 +162,7 @@ flowchart LR
   exdb --> gsEx[GeoServer Exhibition WMS]
   exdb --> gsDl[GeoServer Download WFS]
   exdb --> geoFile[Job geo-file]
-  geoFile -->|CSV pré-gerado| s3[(Object storage)]
+  geoFile -->|CSV pré-gerado| s3[(dsp-object-storage SeaweedFS)]
   dspdb --> be[Backend serve API]
   be --> fe[Frontend consome API + WMS]
   be -->|WFS downloads| gsDl
@@ -237,6 +241,7 @@ Embora o assistente de configuração `./config.sh` elimine a necessidade de edi
 | `DSP_CORS_ALLOWED_ORIGINS` | Origens permitidas no CORS do backend. Pelo gateway o frontend chama a API na mesma origem, então isso cobre só o dev local |
 | `DSP_ABOUT_CONFIG_FILE` / `DSP_ABOUT_CONTENT_DIR` | Caminho do índice `about-config.json` e da pasta com os Markdown das abas da página About (default `file:/config/about/about-config.json` e `file:/config/about/`) |
 | Build args do frontend | `VITE_BASE_URL`, `VITE_DSP_API_URL` — definem base path e URL da API usadas no build da imagem |
+| `DSP_OBJECT_STORAGE_*` / `DSP_OBJECT_STORAGE_HOST_PORT` | Endpoint interno do SeaweedFS (`http://dsp-object-storage:8333`), bucket, credenciais e porta no host para diagnóstico. Demo Brasil deixa o endpoint vazio |
 | `DSP_BACKEND_PATH` / `DSP_FRONTEND_PATH` / `DSP_JOB_MIGRATION_PATH` / `DSP_JOB_GEO_FILE_GENERATION_PATH` | Paths dos repositórios irmãos usados na orquestração de build |
 
 Veja também: [Instalação completa](../guides/full-installation.md), [Bancos de dados](../architecture/databases.md).
@@ -277,5 +282,6 @@ flowchart LR
 - **Imagem `dsp-job-migration`** — no build, copia `application.yaml`, `mapLayersConfig.json`, o entrypoint, `publish_geoservers.sh` e `populate_geoserver.sh`.
 - **Imagens dos bancos** — o SQL de init (`config/db/dsp-db` e `config/db/dsp-geoserver-db`) é copiado para `/docker-entrypoint-initdb.d` na imagem; no `dsp-db` entram os schemas Spring Batch `data_migration` (migração) e `geo_file_generation` (job geo-file). Volumes nomeados guardam só os dados.
 - **Imagem `dsp-gateway`** — no build, copia os templates nginx de `config/Gateway/nginx` para `/etc/nginx/templates`. O volume `dsp_gateway_cache` guarda só o cache.
+- **Imagem `dsp-object-storage`** — SeaweedFS (`weed mini`) com credenciais em `s3.json` na imagem. Volume `dsp_object_storage_data` guarda os objetos. Capacidade total depende do disco do host; `-master.volumeSizeLimitMB` controla o tamanho de cada volume interno, não uma quota fixa.
 
 Veja também: [Fluxo de dados](../architecture/data-flow.md) (runtime) e [rer-dsp-backend](backend.md) (variáveis de ambiente de downloads).
