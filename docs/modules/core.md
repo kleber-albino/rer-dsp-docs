@@ -13,6 +13,7 @@ flowchart TD
   fe["rer-dsp-frontend"]
   job["rer-dsp-job-data-migration"]
   geoFile["rer-dsp-job-geo-file-generation"]
+  storage["dsp-object-storage (SeaweedFS)"]
   gs["2 GeoServers + 2 bancos Postgres/PostGIS"]
   gw["dsp-gateway"]
 
@@ -20,6 +21,7 @@ flowchart TD
   core --> fe
   core --> job
   core --> geoFile
+  core --> storage
   core --> gs
   core --> gw
 ```
@@ -31,7 +33,8 @@ flowchart TD
 - SQL de inicialização dos bancos.
 - GeoServer Exhibition (mapa) e GeoServer Download (WFS de exportação).
 - Gateway nginx (`dsp-gateway`) como porta de entrada única da stack.
-- Job de migração (`dsp-job-migration`, profile `migration`) e job geo-file (`dsp-job-geo-file-generation`, profile `geo-file`).
+- Object storage SeaweedFS (`dsp-object-storage`, profile `object-storage`) e job geo-file (`dsp-job-geo-file-generation`, mesmo profile) — obrigatórios no adotante real; a Demo Brasil não sobe esses serviços.
+- Job de migração (`dsp-job-migration`, profile `migration`).
 - Três scripts operacionais: `./config.sh`, `./setup.sh`, `./start.sh`.
 - Clone automático dos repositórios irmãos quando ausentes (com preview da estrutura de pastas antes da confirmação). `./config.sh` também clona o job se faltar.
 
@@ -191,7 +194,7 @@ AOI e camadas genéricas só existem nos GeoServers depois que o job populou o `
 
 1. Verifica os repositórios irmãos `rer-dsp-backend` e `rer-dsp-frontend` (paths via `DSP_BACKEND_PATH`/`DSP_FRONTEND_PATH`, default `../rer-dsp-backend` e `../rer-dsp-frontend`).
 2. Garante a configuração de instalação (`installationConfig.json`) e de camadas de mapa.
-3. Sobe os bancos (sem migrar agora) e, se o modo for `continuous` ou `scheduled-once` ainda pendente, mantém a stack de migração ativa. Se `DSP_OBJECT_STORAGE_ENDPOINT` estiver definido, sobe também o job geo-file (`profile=geo-file`).
+3. Sobe os bancos (sem migrar agora) e, se o modo for `continuous` ou `scheduled-once` ainda pendente, mantém a stack de migração ativa. No adotante real, sobe também `dsp-object-storage` e o job geo-file (`profile=object-storage`). A Demo Brasil não sobe object storage.
 4. Garante os GeoServers no ar (rebuild atualiza o JSON de mapa na imagem) e builda/sobe `dsp-backend`, `dsp-frontend` e o `dsp-gateway`. Se a carga inicial foi **Run now**, as camadas já foram publicadas no `./setup.sh`; se foi **Schedule for later**, o populate roda depois da primeira migração agendada (entrypoint do job).
 5. Imprime um resumo da stack e as URLs de cada serviço.
 
@@ -200,13 +203,14 @@ AOI e camadas genéricas só existem nos GeoServers depois que o job populou o `
 Só os bancos publicam porta no host. Os serviços HTTP ficam acessíveis apenas pelo gateway. Os dois jobs não expõem HTTP — sobem por profile do Compose.
 
 | Serviço | Acesso | Papel |
-|---------|--------|-------|
-| dsp-db | porta `20654` | Banco operacional — negócio + bbox/centroid. Metadados Spring Batch: schema `data_migration` (migração + watermark) e `geo_file_generation` (job geo-file) |
-| dsp-geoserver-db | porta `20656` | Geometria completa `dsp.*` (`geom`) |
-| Job de migração (`dsp-job-migration`) | profile `migration`, sem HTTP | ETL da origem JDBC para `dsp-db` e `geoserver-db` |
-| Job geo-file (`dsp-job-geo-file-generation`) | profile `geo-file`, sem HTTP | Pré-gera CSV de download no object storage (se `DSP_OBJECT_STORAGE_ENDPOINT` definido) |
-| GeoServer Exhibition | via gateway `/geoserver-exhibition/` | WMS/WFS de mapa |
-| GeoServer Download | via gateway `/geoserver-download/` | WFS de downloads (consumido pelo backend) |
+|---------|--------------|-------|
+| dsp-db | porta 20654 | Banco operacional — negócio + bbox/centroid. Metadados Spring Batch: schema `data_migration` (job de migração) e schema `geo_file_generation` (job geo-file) |
+| GeoServer DB (dsp-geoserver-db) | porta 20656 | Geometria completa `dsp.*` |
+| Job de migração (`dsp-job-migration`) | profile `migration`, sem porta HTTP | ETL da origem JDBC para dsp-db e geoserver-db |
+| Object storage (`dsp-object-storage`) | profile `object-storage`, porta host `8333` (opcional) | SeaweedFS (`weed mini`) — API S3 do DSP. Obrigatório no adotante real |
+| Job geo-file (`dsp-job-geo-file-generation`) | profile `object-storage`, sem porta HTTP | Pré-gera CSV de download no SeaweedFS. Obrigatório no adotante real |
+| GeoServer Exhibition | via gateway, `/geoserver-exhibition/` | WMS/WFS de mapa a partir do geoserver-db |
+| GeoServer Download | via gateway, `/geoserver-download/` | WFS de downloads (consumido pelo backend) |
 
 ## Fluxo dual-write
 
@@ -218,7 +222,7 @@ flowchart LR
   exdb --> gsEx[GeoServer Exhibition WMS]
   exdb --> gsDl[GeoServer Download WFS]
   exdb --> geoFile[Job geo-file]
-  geoFile -->|CSV pré-gerado| s3[(Object storage)]
+  geoFile -->|CSV pré-gerado| s3[(dsp-object-storage SeaweedFS)]
   dspdb --> be[Backend serve API]
   be --> fe[Frontend consome API + WMS]
   be -->|WFS downloads| gsDl
@@ -301,6 +305,7 @@ Embora o assistente de configuração `./config.sh` elimine a necessidade de edi
 | `DSP_ABOUT_CONFIG_FILE` / `DSP_ABOUT_CONTENT_DIR` | Índice About e pasta Markdown (default `file:/config/about/…`) |
 | `DSP_OBJECT_STORAGE_ENDPOINT` | Quando definido, habilita o job geo-file (`profile=geo-file`) |
 | Build args do frontend | `VITE_BASE_URL`, `VITE_DSP_API_URL` — definem base path e URL da API usadas no build da imagem |
+| `DSP_OBJECT_STORAGE_*` / `DSP_OBJECT_STORAGE_HOST_PORT` | Endpoint interno do SeaweedFS (`http://dsp-object-storage:8333`), bucket, credenciais e porta no host para diagnóstico. Demo Brasil deixa o endpoint vazio |
 | `DSP_BACKEND_PATH` / `DSP_FRONTEND_PATH` / `DSP_JOB_MIGRATION_PATH` / `DSP_JOB_GEO_FILE_GENERATION_PATH` | Paths dos repositórios irmãos usados na orquestração de build |
 
 Variáveis antigas `DSP_RUN_MIGRATION` / `DSP_SKIP_MIGRATION` são rejeitadas. `DSP_MIGRATION_SYNC_INTERVAL` não é mais usado.
@@ -340,5 +345,6 @@ flowchart LR
 - **`about-config.json`** — índice About (`enabled`, `bannerTitle`, `tabs` com ids `tab-1`, `tab-2`, …).
 - **`application.yaml`** — plano ETL. Copiado para a imagem do job no build (com entrypoint e scripts de publicação GeoServer).
 - **Imagens `dsp-backend`, GeoServers, `dsp-job-migration`, bancos e `dsp-gateway`** — configs e SQL de init copiados no build via `dsp_config`; volumes guardam só dados (e cache do gateway).
+- **Imagem `dsp-object-storage`** — SeaweedFS (`weed mini`) com credenciais em `s3.json` na imagem. Volume `dsp_object_storage_data` guarda os objetos. Capacidade total depende do disco do host; `-master.volumeSizeLimitMB` controla o tamanho de cada volume interno, não uma quota fixa.
 
 Veja também: [Fluxo de dados](../architecture/data-flow.md) (runtime) e [rer-dsp-backend](backend.md) (variáveis de ambiente de downloads).
