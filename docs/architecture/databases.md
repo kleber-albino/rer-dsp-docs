@@ -55,6 +55,8 @@ São papéis de **conexão**, não containers Postgres extras. No core há dois 
 
 `dsp-db` e `geoserver-db` repetem as tabelas lógicas (`territory_level_1`, `territory_level_2`, `territory_level_3`, `area_of_interest`). IDs e FKs são `VARCHAR` (`territory_level_*`: `varchar(64)`; AOI/camadas: `varchar(255)` no `id`). A diferença geo está na seção seguinte.
 
+A tabela `dsp.kpi_measure` existe **somente** no `dsp-db` (não no geo-target). A coluna `area` em `dsp.area_of_interest` também é preenchida exclusivamente no `dsp-db`, pelo `kpiCalculationJob` — não faz parte do dual-write da migração.
+
 ---
 
 ## Colunas geo por banco
@@ -77,7 +79,7 @@ O writer do job deriva `boundary_box` e `centroid_coordinates` a partir da geome
 
 | Componente | source | dsp-db | geoserver-db | batch |
 |------------|--------|--------|---------------|-------|
-| `rer-dsp-job-data-migration` | leitura | escrita (bbox/centroid) | escrita (`geom`) | escrita (`BATCH_*` + watermark) |
+| `rer-dsp-job-data-migration` | leitura | escrita (bbox/centroid; `area` e `kpi_measure` via kpi-job) | escrita (`geom`) | escrita (`BATCH_*` + watermark) |
 | `rer-dsp-backend` / `rer-dsp-core` | — | leitura/escrita de negócio (schema `dsp`) | — | — |
 | GeoServer Exhibition | — | — | leitura (WMS/WFS mapa) | — |
 | GeoServer Download | — | — | leitura (WFS downloads via backend) | — |

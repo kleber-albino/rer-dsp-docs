@@ -81,23 +81,26 @@ Rodar sem argumentos (`./config.sh`). Antes do wizard, o script confere os repos
 !!! warning "Rebuild após alterar a configuração"
     Os arquivos operacionais gerados em `config/` são **copiados para dentro das imagens Docker no build** (`select-runtime-config.sh` + contexto `dsp_config`). Depois de `./config.sh`, rode `./setup.sh` ou `./start.sh` para rebuildar os containers que consomem essa configuração (backend, GeoServers, job de migração).
 
-O wizard é dividido em **4 estágios** (+ About opcional), cada um cobrindo um grupo de decisões e explicando o impacto de cada campo antes de perguntar o valor:
+O wizard é dividido em **5 estágios** (+ About opcional), cada um cobrindo um grupo de decisões e explicando o impacto de cada campo antes de perguntar o valor:
 
 | Estágio | O que é configurado | Impacto |
 |---------|----------------------|---------|
-| **1/4 — Banco de origem e referência espacial** | URL JDBC da fonte, usuário/senha de leitura (`DSP_SOURCE_DB_USER` / `DSP_SOURCE_DB_PASSWORD`), SRID de cada nível territorial (L1/L2/L3) e da área de interesse | Usado pelo job de migração (ETL, inclusive `ST_Transform` em UA/AOI/camadas) e gravado no `.env` |
-| **2/4 — Tabelas, colunas e camadas** | Para L1/L2/L3/AOI: tabela, PK (**uma** coluna; composta não suportada), `parent_key` (L2/L3), nome, geometria, `created_at_column` (obrigatório), `updated_at_column` (opcional), `where-clause`. Na AOI: `territory_level_3_column`, `area_column`, `additional_columns`, `business_only_persist_columns` (KPIs). Camadas genéricas em `etl.layers[]` (ETL + mapa + downloads num único bloco) | Plano ETL, `mapLayersConfig.json` e `downloadThemesConfig.json`. Contrato de colunas: [Contrato de colunas](job-data-migration/configuration.md#contrato-de-colunas) |
-| **3/4 — Textos da aplicação e KPIs** | Label/unidade de cada KPI habilitado, unidade de área, formato de data e data-hora | Cards de KPI, detalhe e downloads |
-| **4/4 — Interface** | Labels da hierarquia, títulos das telas, campos do painel de detalhe da AOI, cores de KPI, `map.initialView` (`territorial_bbox` / `manual` / `planet`), grupos e estilos das camadas fixas de mapa | Frontend, seletor de camadas e estilos publicados no GeoServer |
+| **1/5 — Banco de origem e referência espacial** | URL JDBC da fonte, usuário/senha de leitura (`DSP_SOURCE_DB_USER` / `DSP_SOURCE_DB_PASSWORD`), SRID de cada nível territorial (L1/L2/L3) e da área de interesse | Usado pelo job de migração (ETL, inclusive `ST_Transform` em UA/AOI/camadas) e gravado no `.env` |
+| **2/5 — Tabelas, colunas e camadas** | Para L1/L2/L3/AOI: tabela, PK (**uma** coluna; composta não suportada), `parent_key` (L2/L3), nome, geometria, `created_at_column` (obrigatório), `updated_at_column` (opcional), `where-clause`. Na AOI: `territory_level_3_column`, `additional_columns`. Camadas genéricas em `etl.layers[]` (ETL + mapa + downloads num único bloco) | Plano ETL, `mapLayersConfig.json` e `downloadThemesConfig.json`. Contrato de colunas: [Contrato de colunas](job-data-migration/configuration.md#contrato-de-colunas) |
+| **3/5 — Textos da aplicação** | Label do card da AOI, formatos de data e data-hora, object storage opcional | Cards de KPI (rótulos), detalhe e downloads |
+| **4/5 — Interface** | Labels da hierarquia, títulos das telas, campos do painel de detalhe da AOI, `map.initialView` (`territorial_bbox` / `manual` / `planet`), grupos e estilos das camadas fixas de mapa | Frontend, seletor de camadas e estilos publicados no GeoServer |
+| **5/5 — KPI configuration** | `theme_count` (0 até o mínimo entre 4 e o número de camadas), seleção de `layer` por tema, unidade de área da AOI (`optional_label`), cores dos cards | Bloco `kpis` no `application.yaml`, cards `THEME_*` no `installation-config.json` e job `kpi-job` |
 | **Opcional — About** | Página About customizada (tabs em Markdown) | Gera `config/about/about-config.json` + arquivos em `config/about/` |
 
 Se nenhum nível territorial (L1/L2/L3) estiver **configurado no ETL** e o modo escolhido for `territorial_bbox`, o wizard grava `map.initialView.mode: planet` automaticamente.
 
-O `./config.sh` (opção **2 — editar**) reabre esse mesmo wizard de 4 estágios com os valores atuais preenchidos.
+O `./config.sh` (opção **2 — editar**) reabre esse mesmo wizard de 5 estágios com os valores atuais preenchidos.
 
 #### Jobs gerados automaticamente
 
-O wizard **não** pergunta quais jobs fixos ligar. O `application.yaml` gerado habilita sempre L1, L2, L3 e área de interesse. A flag `layer-jobs` fica `true` automaticamente quando há entradas em `etl.layers[]`; caso contrário, `false`.
+O wizard **não** pergunta quais jobs fixos ligar. O `application.yaml` gerado habilita sempre L1, L2, L3, área de interesse e `kpi-job`. A flag `layer-jobs` fica `true` automaticamente quando há entradas em `etl.layers[]`; caso contrário, `false`.
+
+A área exibida nos KPIs **não** vem da origem: o `kpiCalculationJob` calcula `dsp.area_of_interest.area` e grava temas em `dsp.kpi_measure` após a migração. Detalhes: [Job de cálculo de KPIs](job-data-migration/configuration.md#job-de-calculo-de-kpis).
 
 Para desligar um job fixo ou uma camada específica, edite manualmente `config/Job-Data-Migration/application/application.yaml` (no job, camadas aceitam `enabled: false`; no `adopter-config.yaml` do wizard, remova a camada de `etl.layers[]` — o campo `enabled` **não** é suportado lá).
 
@@ -119,7 +122,7 @@ A mesma `source_table` pode aparecer **mais de uma vez** se `layer_name` (e port
 
 Para **não** migrar ou exibir uma camada, remova-a de `etl.layers[]` e reaplique — não use `enabled: false` no YAML do adotante.
 
-Depois dos 4 estágios, o wizard pergunta se o adotante quer habilitar a página **About** customizada. Se sim, pergunta o título do banner, quantas abas terá (mínimo 1) e, para cada aba, o **label** e o caminho de um `.md` ou `.markdown` em qualquer pasta do computador. Arquivos fora de `config/about/` são copiados para lá (nome slugificado a partir do label); arquivos já na pasta são reutilizados. Os ids (`tab-1`, `tab-2`, …) são gerados em `about-config.json`; a primeira aba abre por padrão. Se o arquivo não existir ou a extensão for inválida, o wizard repergunta. Se o adotante optar por não habilitar, a página About fica desabilitada.
+Depois dos 5 estágios, o wizard pergunta se o adotante quer habilitar a página **About** customizada. Se sim, pergunta o título do banner, quantas abas terá (mínimo 1) e, para cada aba, o **label** e o caminho de um `.md` ou `.markdown` em qualquer pasta do computador. Arquivos fora de `config/about/` são copiados para lá (nome slugificado a partir do label); arquivos já na pasta são reutilizados. Os ids (`tab-1`, `tab-2`, …) são gerados em `about-config.json`; a primeira aba abre por padrão. Se o arquivo não existir ou a extensão for inválida, o wizard repergunta. Se o adotante optar por não habilitar, a página About fica desabilitada.
 
 !!! tip "Contrato protegido"
     O arquivo gerado contém apenas os campos editáveis pelo adotante. Chaves de contrato internas do DSP (IDs de camada WMS, nomes de tabela alvo, códigos de KPI) permanecem fixas nos templates do core e não são expostas no wizard.

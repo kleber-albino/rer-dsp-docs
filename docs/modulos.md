@@ -9,7 +9,7 @@ O DSP é composto por 5 módulos, cada um em seu próprio repositório git.
 | **rer-dsp-core** | Orquestração Docker Compose: bancos, GeoServer, scripts de config/setup/start | Docker Compose | [modules/core.md](modules/core.md) | rer-dsp-core |
 | **rer-dsp-backend** | API REST — dados de negócio, territórios, downloads, mapas | Java 21 + Spring Boot 3.4.2 + PostGIS | [modules/backend.md](modules/backend.md) | rer-dsp-backend |
 | **rer-dsp-frontend** | Interface web — busca, KPIs, mapa interativo | Vue 3 + Vite + TypeScript | [modules/frontend.md](modules/frontend.md) | rer-dsp-frontend |
-| **rer-dsp-job-data-migration** | ETL geoespacial — sincroniza fonte do adotante com os bancos do DSP | Java 21 + Spring Batch | [modules/job-data-migration/overview.md](modules/job-data-migration/overview.md) | rer-dsp-job-data-migration |
+| **rer-dsp-job-data-migration** | ETL geoespacial — sincroniza fonte do adotante com os bancos do DSP; job de KPI pós-migração (`area` da AOI + `kpi_measure`) | Java 21 + Spring Batch | [modules/job-data-migration/overview.md](modules/job-data-migration/overview.md) | rer-dsp-job-data-migration |
 | **rer-dsp-docs** (este repositório) | Documentação central do ecossistema | Zensical | — | rer-dsp-docs |
 
 ## Como os módulos se conectam
@@ -35,7 +35,7 @@ flowchart LR
   core -->|orquestra build| fe
 
   src --> job
-  job -->|negócio + bbox/centroid| dspdb
+  job -->|negócio + bbox/centroid + KPIs| dspdb
   job -->|geom completa| exdb
   exdb --> gsEx
   exdb --> gsDl

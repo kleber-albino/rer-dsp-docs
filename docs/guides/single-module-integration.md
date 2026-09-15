@@ -10,7 +10,8 @@
 Para rodar o backend fora do Docker Compose do core, você precisa:
 
 - Um PostgreSQL/PostGIS acessível com o **schema `dsp`** já criado (normalmente provido pelo SQL de inicialização do core).
-- Os arquivos externos de configuração apontados por `DSP_INSTALLATION_CONFIG_FILE` (config de instalação: hierarquia, telas, KPIs), `DSP_MAP_LAYERS_FILE` (camadas de mapa) e `DSP_DOWNLOAD_THEMES_FILE` (temas de download) — normalmente gerados pelo `./config.sh` do core.
+- Os arquivos externos de configuração apontados por `DSP_INSTALLATION_CONFIG_FILE` (config de instalação: hierarquia, telas, cards KPI com `layer` nos temas), `DSP_MAP_LAYERS_FILE` (camadas de mapa) e `DSP_DOWNLOAD_THEMES_FILE` (temas de download) — normalmente gerados pelo `./config.sh` do core.
+- Dados dos totalizadores (`POST /totalizer/`): `dsp.area_of_interest.area` e `dsp.kpi_measure`, preenchidos pelo `kpiCalculationJob` após a migração — ver [Job de cálculo de KPIs](../modules/job-data-migration/configuration.md#job-de-calculo-de-kpis).
 - Rede acessível até o **GeoServer Download** (`DSP_GEOSERVER_WFS_BASE_URL`) para que busca e download de arquivos via WFS funcionem.
 - Variáveis `SPRING_DATASOURCE_URL/USERNAME/PASSWORD` apontando para esse banco, e `SPRING_JPA_HIBERNATE_DDL_AUTO=none` (o backend não gerencia o schema).
 
@@ -36,7 +37,7 @@ Detalhes completos: [rer-dsp-frontend](../modules/frontend.md).
 | `geo-target` | `geoserver-db` — geometria completa |
 | `batch` | Metadados do Spring Batch no schema `data_migration` do banco de destino (`dsp-db`) |
 
-Sem o core, você precisa criar manualmente os schemas de destino (`target` e `geo-target`) e aplicar o script `db/batch_metadata/01_spring_batch_schema.sql` **no banco de destino** (cria `data_migration`). Detalhes completos: [rer-dsp-job-data-migration — Configuração e execução](../modules/job-data-migration/configuration.md).
+Sem o core, você precisa criar manualmente os schemas de destino (`target` e `geo-target`) e aplicar o script `db/batch_metadata/01_spring_batch_schema.sql` **no banco de destino** (cria `data_migration`). Habilite `execution-jobs.kpi-job` e configure o bloco `kpis` se a instalação usar cards de tema na Home. Detalhes completos: [rer-dsp-job-data-migration — Configuração e execução](../modules/job-data-migration/configuration.md).
 
 ## rer-dsp-core sem os demais módulos
 
