@@ -18,7 +18,7 @@ Organizações que possuem uma base de dados geoespacial (propriedades rurais, t
 2. **Construir do zero uma API + frontend + publicação de mapas é caro** e repetitivo — toda organização acaba resolvendo o mesmo problema de forma isolada.
 3. **Geometrias completas nem sempre devem ser expostas** publicamente por padrão — o DSP separa dados de negócio (com bounding box/centroide) de geometria completa (reservada à camada de exibição/mapas).
 
-O DSP resolve isso com um pipeline de sincronização (ETL) que lê da fonte do adotante e grava, de forma controlada, em dois bancos de destino próprios do DSP — um para a API, outro para os mapas — sem tocar diretamente na base de origem em tempo de consulta.
+O DSP resolve isso com um pipeline de sincronização (ETL) que lê da fonte do adotante e grava, de forma controlada, em dois bancos de destino próprios do DSP — um para a API, outro para os mapas — sem tocar diretamente na base de origem em tempo de consulta. Após a migração, um job de KPI calcula a área de cada imóvel e os indicadores por tema (camadas vinculadas), gravando em `dsp.area_of_interest.area` e `dsp.kpi_measure` para os totalizadores da interface.
 
 ## Em quais cenários deve ser utilizado?
 

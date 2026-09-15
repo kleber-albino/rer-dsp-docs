@@ -15,6 +15,7 @@ O DSP trabalha com uma base PostGIS própria (dois destinos), sincronizada a par
 | Unidades administrativas | level-1, level-2, level-3 | Hierarquia configurável via YAML — 3 níveis (ex.: continente → país → divisão administrativa) |
 | Área de interesse | `area-of-interest-geoserver-job` | Ex.: imóveis rurais. DDL automático nos dois destinos; colunas canônicas (`id`, `geom`, `created_at`, …) |
 | Camadas genéricas (opcional) | `layer-jobs` | Qualquer tabela PostGIS extra do adotante, publicada só como layer WMS (não vai para o `dsp-db` operacional). Pré-requisito: área de interesse já migrada. Guia: [Migração de camadas genéricas](layer-migration.md) |
+| Cálculo de KPIs | `kpi-job` | Após AOI e camadas: calcula `area` na AOI e grava temas em `dsp.kpi_measure` no `dsp-db`. Guia: [Job de cálculo de KPIs](configuration.md#job-de-calculo-de-kpis) |
 
 O significado de cada level não está fixo no código — vem das tabelas e colunas configuradas no YAML.
 
@@ -75,9 +76,10 @@ admin-unit level-1
         → admin-unit level-3
             → area-of-interest
                 → camadas genéricas (layer-jobs)
+                    → kpi-job (kpiCalculationJob)
 ```
 
-Essa ordem é obrigatória por causa de FKs no destino: filhos referenciam pais já migrados; camadas genéricas dependem de `area_of_interest_id` já existir no geo-target. O `JobRunner` dos jobs fixos roda antes do runner de camadas (`@Order(1)` e `@Order(2)`).
+Essa ordem é obrigatória por causa de FKs no destino: filhos referenciam pais já migrados; camadas genéricas dependem de `area_of_interest_id` já existir no geo-target; KPIs de tema dependem das geometrias das camadas no geo-target. O `JobRunner` dos jobs fixos roda antes do runner de camadas (`@Order(1)` e `@Order(2)`); o KPI job roda por último (`@Order(3)`).
 
 ## Sincronização incremental (watermark)
 

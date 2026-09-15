@@ -73,9 +73,9 @@ Se precisar personalizar portas, credenciais dos 2 bancos ou paths dos repositó
 
 ### Passo 3 — `./config.sh`
 
-Wizard interativo em **4 estágios** (+ About opcional) que gera `config/adopter/adopter-config.yaml` e, a partir dele, os arquivos operacionais JSON/YAML (instalação do backend, camadas de mapa, temas de download, `application.yaml` do job). Você também pode trazer um YAML pronto ou editá-lo manualmente e **reaplicar**. Detalhamento: [rer-dsp-core](../modules/core.md#configsh).
+Wizard interativo em **5 estágios** (+ About opcional) que gera `config/adopter/adopter-config.yaml` e, a partir dele, os arquivos operacionais JSON/YAML (instalação do backend, camadas de mapa, temas de download, bloco `kpis` e `application.yaml` do job). Você também pode trazer um YAML pronto ou editá-lo manualmente e **reaplicar**. Detalhamento: [rer-dsp-core](../modules/core.md#configsh).
 
-Depois dos 4 estágios (+ About opcional), o wizard pode habilitar a página About — título do banner, abas e Markdown (o wizard copia arquivos de qualquer pasta para `config/about/`).
+Depois dos 5 estágios (+ About opcional), o wizard pode habilitar a página About — título do banner, abas e Markdown (o wizard copia arquivos de qualquer pasta para `config/about/`).
 
 !!! tip "Rebuild após configurar"
     Os arquivos gerados são copiados para as imagens Docker no build. Depois de `./config.sh`, rode `./setup.sh` ou `./start.sh` para que backend, GeoServers e job usem a configuração nova.

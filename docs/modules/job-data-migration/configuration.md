@@ -11,6 +11,7 @@ Detalhe operacional do repositório de ETL geoespacial do DSP (`br.car:dsp-batch
 - [Preparar o ambiente](#preparar-o-ambiente-para-executar-o-job-isolado-sem-o-rer-dsp-core)
 - [Configuração YAML](#configuracao-yaml)
 - [Paralelização e partição](#paralelizacao-e-particao)
+- [Job de cálculo de KPIs](#job-de-calculo-de-kpis)
 - [Fluxo interno](#fluxo-interno)
 - [Comandos de execução](#comandos-de-execucao)
 - [Docker no core (`dsp_config`)](#docker-no-core-dsp_config)
@@ -40,10 +41,11 @@ Detalhe operacional do repositório de ETL geoespacial do DSP (`br.car:dsp-batch
 | `admin-unit-level-3-geoserver-job` | `adminUnitLevel3GeoserverJob` | `batch.admin-unit.level-3` |
 | `area-of-interest-geoserver-job` | `areaOfInterestGeoserverJob` | `batch.area-of-interest` |
 | `layer-jobs` | `layerMigrationJob_<chave>` | `batch.layers[]` |
+| `kpi-job` | `kpiCalculationJob` | `kpis` |
 
-Ordem obrigatória: **L1 → L2 → L3 → area-of-interest → camadas**.
+Ordem obrigatória: **L1 → L2 → L3 → area-of-interest → camadas → kpi-job**.
 
-Quando o `application.yaml` é gerado pelo `./config.sh`, os jobs fixos (L1–L3 + AOI) ficam **sempre** `true`. `layer-jobs` vira `true` automaticamente se houver entradas em `etl.layers[]`. Para desligar um job fixo ou uma camada, edite o YAML manualmente (`enabled: false` só vale em `batch.layers[]` do job — não no `adopter-config.yaml`).
+Quando o `application.yaml` é gerado pelo `./config.sh`, os jobs fixos (L1–L3 + AOI) e o `kpi-job` ficam **sempre** `true`. `layer-jobs` vira `true` automaticamente se houver entradas em `etl.layers[]`. Para desligar um job fixo, o KPI ou uma camada, edite o YAML manualmente (`enabled: false` só vale em `batch.layers[]` do job — não no `adopter-config.yaml`).
 
 ```yaml
 execution-jobs:
@@ -52,6 +54,7 @@ execution-jobs:
   admin-unit-level-3-geoserver-job: false
   area-of-interest-geoserver-job: false
   layer-jobs: false
+  kpi-job: true
 ```
 
 ---
@@ -60,7 +63,7 @@ execution-jobs:
 
 Você aponta **qual coluna da origem** cumpre cada papel. No destino oficial do DSP o **nome é fixo**. O nome na origem pode ser qualquer um.
 
-No wizard (`./config.sh`, estágio 2/4) o campo do `adopter-config.yaml` é o da coluna da esquerda. No YAML do job, o da direita.
+No wizard (`./config.sh`, estágio 2/5) o campo do `adopter-config.yaml` é o da coluna da esquerda. No YAML do job, o da direita.
 
 ### Unidades administrativas (L1 / L2 / L3)
 
@@ -87,24 +90,25 @@ Tabela destino: `dsp.area_of_interest` (nos dois bancos). Sem `column-mapping`: 
 | Criação | `created_at_column` | `creation-date-column` | sim | `created_at` | os dois bancos |
 | Atualização | `updated_at_column` | `updated-at-column` | não | `updated_at` | os dois bancos |
 | Nível 3 | `territory_level_3_column` | `territory-level-3-column` | sim | `territory_level_3_id` | os dois bancos |
-| Área | `area_column` | `total-area-column` | sim | `area` | os dois bancos |
 | Geometria | `geometry_column` | `geometry-column` | sim | `geom` no geo-target; no `dsp-db` vira bbox + centroid | os dois bancos (formas diferentes) |
+| Área | — | — | — | `area` | **só** `dsp-db`, preenchida pelo **kpi-job** (não vem da origem) |
+
+A coluna `area` existe no DDL da AOI no `dsp-db`, mas **não é migrada** da fonte. O job de migração grava bbox/centroid e atributos; o `kpiCalculationJob` calcula `ST_Area(geom::geography)` a partir da geometria no geo-target e atualiza `dsp.area_of_interest.area` no `dsp-db`. A unidade exibida vem de `kpis.area-unit-of-measurement` (wizard, estágio 5/5).
 
 #### Colunas adicionais da AOI
 
-Duas listas, escolhidas no wizard (estágio 2/4) ou no YAML:
+Lista escolhida no wizard (estágio 2/5) ou no YAML:
 
 | Lista | Wizard | YAML | Nome no destino | Onde grava | Uso |
 |-------|--------|------|-----------------|------------|-----|
 | Extras de negócio/mapa | `additional_columns` | `additional-columns` | **o mesmo da origem** | `dsp-db` **e** geo-target | Qualquer atributo que você queira no detalhe da AOI e no mapa (ex.: `owner_name`, `registry_code`) |
-| KPIs de tema | `business_only_persist_columns` | `business-only-persist-columns` | **o mesmo da origem** (em geral `theme_1`…`theme_4`) | **só** `dsp-db` | Cards de KPI. Não vão para o GeoServer |
 
 Regras:
 
-- Informe o **nome da coluna na origem**. Se o nome na origem for outro, use um alias no `source-table` (SQL) para o destino ficar `theme_1`, etc.
+- Informe o **nome da coluna na origem**.
 - Não use um nome reservado: `id`, `created_at`, `updated_at`, `territory_level_3_id`, `area`, `geom`.
-- O painel de detalhe da AOI (wizard, estágio 4/4) só oferece extras que estejam em `additional_columns`.
-- O DDL do `dsp-db` cria `theme_1`…`theme_4` mesmo se você não mapear nenhum KPI.
+- O painel de detalhe da AOI (wizard, estágio 4/5) só oferece extras que estejam em `additional_columns`.
+- KPIs de tema **não** são colunas da AOI — ficam em `dsp.kpi_measure` (ver [Job de cálculo de KPIs](#job-de-calculo-de-kpis)).
 
 ```yaml
 batch:
@@ -112,9 +116,6 @@ batch:
     additional-columns:
       - owner_name          # chega como owner_name nos dois destinos
       - registry_code
-    business-only-persist-columns:
-      - theme_1             # só dsp-db, card de KPI
-      - theme_2
 ```
 
 ### Camadas genéricas
@@ -169,6 +170,66 @@ batch:
         - length_km                     # chega como length_km
         - basin_code
 ```
+
+---
+
+## Job de cálculo de KPIs
+
+O `kpiCalculationJob` (`@Order(3)`) roda **depois** da migração de AOI e camadas. Lê geometrias do **geo-target**, grava resultados no **dsp-db** e não altera o geo-target.
+
+```mermaid
+flowchart LR
+  geo[(geoserver-db<br/>geom)]
+  job[kpiCalculationJob]
+  dsp[(dsp-db)]
+  api[TotalizerService]
+
+  geo -->|ST_Area AOI| job
+  geo -->|ST_Area por camada| job
+  job -->|UPDATE area| dsp
+  job -->|TRUNCATE + INSERT| dsp
+  dsp --> api
+```
+
+### Pré-requisitos
+
+- Job de AOI concluído com `geom` válida em `dsp.area_of_interest` no geo-target.
+- Para cada tema em `kpis.themes[]`, a camada correspondente já migrada no geo-target (`dsp.<layer_name>`).
+- `kpis.theme-count` deve ser igual ao número de entradas em `kpis.themes[]` com `layer-name` preenchido.
+
+### O que o job grava
+
+| Destino | Tabela/coluna | Comportamento |
+|---------|---------------|---------------|
+| `dsp-db` | `dsp.area_of_interest.area` | `UPDATE` por `id`: `ST_Area(geom::geography)` no geo-target, convertido para `area-unit-of-measurement` |
+| `dsp-db` | `dsp.kpi_measure` | `TRUNCATE` + `INSERT` por execução: uma linha por AOI e por `kpi_name` |
+
+Com `theme-count: 0`, o job ainda atualiza `area` na AOI e deixa `kpi_measure` vazio (após truncate).
+
+### Schema `dsp.kpi_measure`
+
+Criado automaticamente no `dsp-db` se ainda não existir:
+
+| Coluna | Tipo | Observação |
+|--------|------|------------|
+| `id` | `bigserial` | PK |
+| `area_of_interest_id` | `varchar(255)` | FK para `dsp.area_of_interest(id)` **sem** `ON DELETE CASCADE` |
+| `value` | `numeric(18,3)` | Soma de áreas das feições da camada na AOI, na unidade do tema |
+| `kpi_name` | `varchar(255)` | Nome da layer (`layer-name` do YAML / `card.layer` na instalação) |
+
+Constraint `UNIQUE (area_of_interest_id, kpi_name)`.
+
+Para cada tema, o job agrupa feições da camada por `area_of_interest_id` no geo-target e soma `ST_Area(geom::geography)` antes da conversão de unidade.
+
+### Contrato com a instalação
+
+Três artefatos devem estar alinhados:
+
+- `adopter-config.yaml`: `installation.kpis.theme_count`, `theme_1…4.layer`, `area_of_interest.optional_label`
+- `application.yaml`: bloco `kpis` + `execution-jobs.kpi-job: true` (gerado pelo `./config.sh`)
+- `installation-config.json`: cards `AREA_OF_INTEREST` + `THEME_*` com campo `layer` nos temas
+
+O backend agrega esses valores via `POST /totalizer/` — ver [rer-dsp-backend](../backend.md#totalizerservice-post-totalizer).
 
 ---
 
@@ -329,7 +390,7 @@ batch:
 | `updated-at-column` | não | Coluna de atualização na origem; se omitida, o incremental usa só a criação |
 | `where-clause` | não | Filtro SQL na detecção, no scan de órfãos **e** na leitura de escrita (default `1=1`) |
 | `persist-columns` | sim | Colunas gravadas nos **dois** destinos (PK + atributos + FKs + datas) |
-| `business-only-persist-columns` | não | Colunas gravadas **só** no `dsp-db` (ex.: KPIs). Não vão para o geo-target |
+| `business-only-persist-columns` | não | Colunas gravadas **só** no `dsp-db` (atributos extras de negócio). Não vão para o geo-target |
 | `column-mapping` | não | Tradução `origem: destino` quando os nomes diferem |
 | `partition-column` | não | Coluna para fatiar a leitura (default = PK). Aceita VARCHAR com valor numérico (`CAST … AS BIGINT`) |
 | `srid` | sim | SRID do destino. Na leitura, UA, AOI e camadas usam `ST_Transform` |
@@ -358,13 +419,9 @@ batch:
     creation-date-column: created_date
     updated-at-column: updated_at
     territory-level-3-column: city_id
-    total-area-column: area_ha
     geometry-column: geometry
     where-clause: "1=1"
     additional-columns: []
-    business-only-persist-columns:
-      - theme_1
-      - theme_2
     layer-name: area-of-interest
     srid: 4326
 ```
@@ -377,16 +434,14 @@ batch:
 | `creation-date-column` | sim | `created_at` (`timestamptz`) |
 | `updated-at-column` | não | `updated_at` (`timestamptz`) |
 | `territory-level-3-column` | sim | `territory_level_3_id` |
-| `total-area-column` | sim | `area` |
 | `geometry-column` | sim | `geom` |
 | `additional-columns` | não | mesmo nome nos dois destinos |
-| `business-only-persist-columns` | não | só `dsp-db` (KPIs `theme_1`…`theme_4`) |
 | `where-clause` | não | default `1=1` |
 | `srid` | sim | — |
 | `layer-name` | não | — |
 | `sync-key` | não (default `area_of_interest`) | — |
 
-O DDL de negócio cria sempre `theme_1`…`theme_4` (`numeric`) e `updated_at` (`timestamptz`), mesmo sem coluna correspondente na origem.
+O DDL de negócio cria a coluna `area` (`numeric`) e `updated_at` (`timestamptz`). `area` só recebe valor após o `kpiCalculationJob`.
 
 !!! warning "PRIMARY KEY no destino"
     A coluna mapeada da PK **deve** ser PRIMARY KEY (ou unique) no target. Caso contrário: *no unique or exclusion constraint matching the ON CONFLICT specification*.
@@ -412,6 +467,33 @@ Obrigatórias: `source-table`, `primary-key`, `area-of-interest-id-column`, `cre
 No wizard do core, a coluna de vínculo com a AOI se chama `parent_key` no `adopter-config.yaml` e vira `area-of-interest-id-column` neste YAML. Camadas declaradas no wizard também viram temas de download (`territoryFilter.strategy: aoi_linked`).
 
 Guia completo: [Migração de camadas genéricas](layer-migration.md).
+
+### Bloco `kpis` (job de cálculo)
+
+Gerado pelo `./config.sh` a partir de `installation.kpis` no `adopter-config.yaml`. Exemplo com dois temas:
+
+```yaml
+kpis:
+  theme-count: 2
+  area-unit-of-measurement: ha
+  themes:
+    - slot: 1
+      layer-name: rivers
+      unit-of-measurement: ha
+    - slot: 2
+      layer-name: conservation-units
+      unit-of-measurement: m²
+```
+
+| Propriedade | Obrigatória | Descrição |
+|-------------|-------------|-----------|
+| `theme-count` | sim | Quantidade de KPIs de tema (0–4; no wizard, no máximo o número de camadas em `etl.layers[]`) |
+| `area-unit-of-measurement` | não (default `m²`) | Unidade da área da AOI após conversão de m² |
+| `themes[]` | sim se `theme-count` > 0 | Um item por tema habilitado |
+| `themes[].layer-name` | sim | Nome da camada no geo-target (`dsp.<nome>`) — deve bater com `layer-name` da migração e com `card.layer` no `installation-config.json` |
+| `themes[].unit-of-measurement` | sim | Unidade do KPI de tema após conversão de m² |
+
+Só roda se `execution-jobs.kpi-job: true`.
 
 ### Conexões (origem, dois destinos, batch no destino)
 
@@ -526,6 +608,8 @@ sequenceDiagram
 
 Na leitura, unidades administrativas, AOI e camadas aplicam `ST_Transform(geom_origem, srid_yaml)` antes do GeoJSON. Na escrita, `ST_SetSRID` grava o SRID no destino. Geometrias com Z/M são achatadas (`ST_Force2D`).
 
+O `kpiCalculationJob` não participa desse pipeline de dual-write: é um tasklet único que lê o geo-target e atualiza `area` + `kpi_measure` no `dsp-db` após os jobs `@Order(1)` e `@Order(2)`.
+
 ---
 
 ## Docker no core (`dsp_config`)
@@ -598,5 +682,7 @@ Status da execução fica em `data_migration` (`BATCH_JOB_EXECUTION` e `BATCH_JO
 | Erro de conexão JDBC | Host/porta/database errados | Conferir `spring.datasource.*` |
 | Geometrias não aparecem | Coluna/SRID/mapping incorretos | Revisar `geometry-column`, `srid`, `column-mapping` (destino canônico: `geom`) |
 | Incremental não pega atualizações | `updated-at-column` ausente ou nula na origem | Preencher a coluna ou reprocessar (apagar a linha do `sync-key` em `BATCH_JOB_EXECUTION_SYNC_STATE`) |
+| Cards de tema vazios ou ausentes na Home | `kpi-job` não rodou, `theme-count` ≠ camadas configuradas, ou backend com cache antigo | Conferir `kpiCalculationJob` `COMPLETED`; alinhar `kpis.themes[].layer-name` com camadas migradas; reiniciar `dsp-backend` após `./config.sh` |
+| Área da AOI zerada ou nula | Geometria ausente/inválida no geo-target ou KPI job não executado | Conferir `geom` em `dsp.area_of_interest` no geoserver-db; rodar `kpi-job` |
 
 Validação pós-execução: [Validação pós-migração](validation.md).
