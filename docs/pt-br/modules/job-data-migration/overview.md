@@ -4,7 +4,7 @@ Job que **copia os dados geográficos do banco da sua organização** para dentr
 
 ## Sumário
 
-- [Como funciona](#como-funciona-visao-simples)
+- [Como funciona](#como-funciona)
 - [O que é copiado](#o-que-e-copiado)
 - [Fluxo em uma imagem](#fluxo-em-uma-imagem)
 - [Ordem da cópia](#ordem-da-copia)

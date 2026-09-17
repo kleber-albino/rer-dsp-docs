@@ -70,7 +70,7 @@ O geo-file **não** consulta `BATCH_JOB_EXECUTION_SYNC_STATE`.
 
 | Etapa | Quem |
 |-------|------|
-| Delta na origem | [Job de migração](../job-data-migration/overview.md#watermark-incremental) (watermark) |
+| Delta na origem | [Job de migração](../job-data-migration/overview.md#so-o-que-mudou-desde-a-ultima-vez) (watermark) |
 | Marcar territórios | Migração, ao terminar `COMPLETED`, na mesma janela temporal |
 | Gerar arquivos | Este job, na agenda `DSP_GEO_FILE_GENERATION_CRON` |
 
