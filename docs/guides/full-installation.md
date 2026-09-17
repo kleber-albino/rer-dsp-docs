@@ -12,7 +12,7 @@ Este guia é voltado a um **administrador de infraestrutura** responsável por c
 | Git           | se os repositórios irmãos ainda não estiverem clonados; os scripts podem cloná-los automaticamente                       |
 | Docker        | 24+ com Compose v2                                                                                                              |
 | Python        | Python 3 (usado pelo wizard `./config.sh`)                                                                                     |
-| Portas usadas | Gateway `8026` (todo o tráfego HTTP), DSP DB `20654`, GeoServer DB `20656` |
+| Porta principal | Gateway **`8026`** — única entrada HTTP (frontend, API, GeoServers). Bancos no host, só para admin: `20654` (`dsp-db`), `20656` (`dsp-geoserver-db`); com object storage, `8333` (SeaweedFS) |
 | Armazenamento | Volumes persistentes para os 2 bancos Postgres/PostGIS (`dsp-db`, `dsp-geoserver-db`); metadados Spring Batch nos schemas `data_migration` e `geo_file_generation` dentro do `dsp-db` |
 
 ## Fluxo de instalação
@@ -28,109 +28,122 @@ flowchart LR
 
 ### Passo 1 — Organizar os repositórios
 
+O DSP é dividido em **repositórios irmãos** no GitHub. Recomendamos criar uma pasta `rer-dsp` e clonar tudo **no mesmo nível** — o `rer-dsp-core` espera os outros módulos em `../rer-dsp-backend`, `../rer-dsp-frontend`, etc.
+
 #### Opção A — fluxo mais simples (recomendado)
 
-Clone apenas o core. Os scripts `./config.sh`, `./setup.sh` e `./start.sh` detectam repositórios irmãos ausentes, exibem a estrutura de pastas que será criada e oferecem cloná-los automaticamente:
+Crie a pasta, clone só o core e entre nele. Os scripts `./config.sh`, `./setup.sh` e `./start.sh` detectam repositórios irmãos ausentes e oferecem cloná-los automaticamente ao lado do core:
 
 ```bash
+mkdir rer-dsp && cd rer-dsp
 git clone https://github.com/Rural-Environmental-Registry/rer-dsp-core.git
 cd rer-dsp-core
 ```
 
+Depois que você aceitar o clone automático nos scripts, a árvore típica fica assim:
+
+```text
+rer-dsp/
+├── rer-dsp-core/          ← você trabalha aqui (config.sh, setup.sh, start.sh)
+├── rer-dsp-backend/
+├── rer-dsp-frontend/
+├── rer-dsp-job-data-migration/
+└── rer-dsp-job-geo-file-generation/
+```
+
 #### Opção B — clone manual
 
-Clone os 4 repositórios (core, backend, frontend, job-data-migration) como pastas **irmãs**, dentro de um mesmo diretório pai (por exemplo `DSP/`):
+Clone todos os repositórios de aplicação como pastas irmãs dentro de `rer-dsp`:
 
 ```bash
-mkdir DSP && cd DSP
+mkdir rer-dsp && cd rer-dsp
 git clone https://github.com/Rural-Environmental-Registry/rer-dsp-core.git
 git clone https://github.com/Rural-Environmental-Registry/rer-dsp-backend.git
 git clone https://github.com/Rural-Environmental-Registry/rer-dsp-frontend.git
 git clone https://github.com/Rural-Environmental-Registry/rer-dsp-job-data-migration.git
+git clone https://github.com/Rural-Environmental-Registry/rer-dsp-job-geo-file-generation.git
 ```
 
 Resultado:
 
 ```text
-DSP/
+rer-dsp/
 ├── rer-dsp-core/
 ├── rer-dsp-backend/
 ├── rer-dsp-frontend/
-└── rer-dsp-job-data-migration/
+├── rer-dsp-job-data-migration/
+└── rer-dsp-job-geo-file-generation/
 ```
-
-Esse layout é o esperado por padrão pelos scripts do core (`../rer-dsp-backend`, `../rer-dsp-frontend`, `../rer-dsp-job-data-migration`). Se preferir outra organização de pastas, ajuste os paths no `.env` depois que ele for criado (`DSP_BACKEND_PATH`, `DSP_FRONTEND_PATH`, `DSP_JOB_MIGRATION_PATH`).
 
 ### Passo 2 — Entrar no core
 
+Se você ainda não estiver dentro do core:
+
 ```bash
-cd rer-dsp-core
+cd rer-dsp/rer-dsp-core
 ```
 
 Não é necessário criar nem copiar o `.env` manualmente. O arquivo é gerado automaticamente na primeira execução de `./config.sh` ou `./setup.sh`, a partir de `.env.example`, quando ainda não existir.
 
-Se precisar personalizar portas, credenciais dos 2 bancos ou paths dos repositórios irmãos antes de subir a stack, edite o `.env` **depois** que um desses scripts o criar. JDBC, SRID e object storage (`DSP_OBJECT_STORAGE_*`) vêm do Passo 3 (`./config.sh`). Modo de migração, `DSP_MIGRATION_CRON` e `DSP_GEO_FILE_GENERATION_CRON` vêm do Passo 4 (`./setup.sh`, adotante real).
-
 ### Passo 3 — `./config.sh`
 
-Wizard interativo em **4 estágios** (+ About opcional) que gera `config/adopter/adopter-config.yaml` e, a partir dele, os arquivos operacionais JSON/YAML (instalação do backend, camadas de mapa, temas de download, `application.yaml` do job). Você também pode trazer um YAML pronto ou editá-lo manualmente e **reaplicar**. Detalhamento: [rer-dsp-core](../modules/core.md#configsh).
+A pessoa que executa o script será **guiada por perguntas no terminal**: em cada estágio o wizard explica o campo, onde o valor é usado e mostra o padrão ou o valor já salvo (Enter mantém o que está entre colchetes). Assim é possível configurar **tudo o que o adotante precisa** — origem dos dados, ETL, textos, mapa, KPIs e **personalizar** a interface sem editar JSON/YAML à mão.
 
-Depois dos 4 estágios (+ About opcional), o wizard pode habilitar a página About — título do banner, abas e Markdown (o wizard copia arquivos de qualquer pasta para `config/about/`).
+O fluxo tem **6 etapas** guiadas (a última, About, é opcional):
+
+| Etapa | Conteúdo |
+|-------|----------|
+| **1** | Banco de origem (JDBC) |
+| **2** | Tabelas, colunas, SRID e camadas genéricas |
+| **3** | Textos de aplicação, formatos de data |
+| **4** | Interface: hierarquia, telas, mapa, estilos das camadas fixas |
+| **5** | KPIs (cores, unidade de área, temas 0–4) |
+| **6** | About opcional (abas em Markdown) |
+
+O `./config.sh` grava a **fonte de verdade do adotante** em `config/adopter/adopter-config.yaml` — **este** é o arquivo pensado para edição manual ou importação de YAML pronto. Na reaplicação (wizard ou opção **1 — Reaplicar**), o `./config.sh` **gera os arquivos operacionais** consumidos pelo backend, GeoServers e jobs. **Não edite esses operacionais à mão:** eles são sobrescritos a cada `./config.sh`.
+
+**Sem o wizard:** copie um `adopter-config.yaml` pronto para `config/adopter/` (use o `.example` como referência) ou edite **somente** esse YAML. O DSP **não** lê o adotante na runtime — backend, GeoServers e jobs usam os JSON/YAML gerados.
+
+!!! warning "Edição manual: só `adopter-config.yaml` + reaplicar"
+    Alterações de configuração devem ir em `config/adopter/adopter-config.yaml`. Os demais arquivos em `config/` gerados pelo `./config.sh` **não** devem ser editados à mão — serão **substituídos** ao rodar `./config.sh` (opção **1 — Reaplicar** ou **2 — Editar**).
+
+    Depois de mudar o YAML do adotante, rode `./config.sh` para regenerar os operacionais. Em seguida, faça rebuild da stack (`./setup.sh` / `./start.sh`) para as imagens Docker incorporarem os arquivos novos.
 
 !!! tip "Rebuild após configurar"
     Os arquivos gerados são copiados para as imagens Docker no build. Depois de `./config.sh`, rode `./setup.sh` ou `./start.sh` para que backend, GeoServers e job usem a configuração nova.
 
 ### Passo 4 — `./setup.sh`
 
-Escolha a opção adequada:
+No **Step 3 — Setup mode**, escolha:
 
-- **Opção 1 — Demonstração**: seed sintético, sem JDBC (veja [Começando rápido](../getting-started.md)).
-- **Opção 2 — Adotante real (ETL)**: requer `./config.sh`. O script pergunta em sequência:
-    1. **Run now** ou **Schedule for later** (quando roda a carga inicial)
-    2. **One-time** ou **Continuous** (comportamento depois da primeira carga)
-    3. **Cron de pré-geração** — horário do job geo-file (`DSP_GEO_FILE_GENERATION_CRON`, 5 campos; padrão do `.env` ou `0 2 * * *`), depois da janela de migração quando houver re-sync
+- **Opção 1 — Demonstração** (veja também [Começando rápido](quick-start.md)):
+  - Carrega dados de exemplo (mapa do Brasil simplificado) nos bancos locais.
+  - Sobe os bancos, aplica o seed e **publica as camadas do mapa** nos dois GeoServers.
+  - **Não** conecta ao banco da sua organização e **não** liga os jobs de importação em segundo plano.
+  - Ao final, indica rodar `./start.sh` para abrir o site e a API.
 
-Combinações típicas:
+- **Opção 2 — Adotante real (dados da organização)**: exige `./config.sh` antes. O script confere se a configuração de importação está pronta e pergunta **como os dados da fonte vão mudar ao longo do tempo** (texto em inglês no terminal: *How will your source data be updated over time?*):
 
-| Escolhas | Modo | Resumo |
-|----------|------|--------|
-| Run now + One-time | `once` | Migra no setup; job desliga |
-| Schedule + One-time | `scheduled-once` | Espera data/hora; migra uma vez; publica GeoServers |
-| Run now + Continuous | `continuous` | Migra no setup; supercronic nos ciclos seguintes |
-| Schedule + Continuous | `continuous` + agenda | Primeira carga na data; depois supercronic |
+| Escolha no script | Comportamento |
+|-------------------|---------------|
+| **1 — One-time load** | Importa os dados **agora**, durante este `./setup.sh`, do banco de origem para os bancos do DSP. Publica as camadas do mapa ao terminar. O job de importação **desliga** depois — não há sincronização automática com a fonte. |
+| **2 — Living source** | Faz a **primeira importação** como no item 1 e publica o mapa. Depois pergunta **de quanto em quanto tempo** buscar dados novos na fonte (por exemplo todo dia, a cada poucas horas ou minutos) e **de quanto em quanto tempo** gerar arquivos prontos para download, se você usa armazenamento de objetos. Mantém os jobs rodando em segundo plano conforme essas agendas. |
+| **3 — Deferred first load** | Você informa **dia e hora** da primeira importação (e o fuso horário). Os bancos ficam vazios até lá; os GeoServers sobem **sem** camadas no mapa até o job rodar. O job de importação fica aguardando. Em seguida o script pergunta: **(a)** depois dessa carga os dados **não mudam mais** — importa uma vez no horário, publica o mapa e pode gerar downloads prontos **uma vez** após essa importação; **(b)** depois da primeira carga a fonte **continua mudando** — no horário escolhido começa a importar e, a partir daí, o mesmo tipo de agenda do item 2 (sincronização e geração de downloads). |
 
-No **Continuous**, o setup pergunta a frequência (diária, a cada N horas ou N minutos) e grava `DSP_MIGRATION_CRON`. O cron de pré-geração é gravado no mesmo passo final do setup. Fuso: `DSP_MIGRATION_TZ`. Reexecutar `./setup.sh` repete as perguntas com default do `.env`.
+Ao final do fluxo real, o setup **salva as agendas** escolhidas no arquivo `.env`. Rodar `./setup.sh` de novo com opção **2** repete as perguntas, usando o que já estiver salvo como padrão.
 
-- **Opção 3 — status/cleanup**: inspeciona ou remove recursos Docker; não migra.
+- **Opção 3 — Stack status / cleanup / exit**:
+  - Lista status dos containers do projeto e URLs conhecidas.
+  - Opcionalmente remove containers, volumes e imagens **deste** projeto (confirmação explícita).
+  - **Não** executa seed, migração nem sobe backend/frontend.
 
 ### Passo 5 — `./start.sh`
 
-Usado após a instalação inicial. Verifica repositórios irmãos, garante configs, sobe bancos (mantendo o serviço de migração se `continuous` ou `scheduled-once` pendente), builda/sobe backend, frontend e gateway. **Nunca** dispara carga imediata — migração fica no `./setup.sh` ou no cron do job.
+Usado **depois** do `./setup.sh`, com bancos, GeoServers e jobs (quando existirem) **já rodando**. O `./start.sh` sobe **somente** o site, a API e o ponto de entrada HTTP — **não** importa dados de novo nem republica camadas. Importação e demo ficam no `./setup.sh` ou nas agendas salvas no setup.
 
-Ao final, a stack fica acessível em uma única porta:
-
-| Serviço | URL |
-|---------|-----|
-| Frontend | `http://localhost:8026/dsp/` |
-| Backend API | `http://localhost:8026/dsp-backend` |
-| GeoServer Exhibition | `http://localhost:8026/geoserver-exhibition/web/` |
-| GeoServer Download | `http://localhost:8026/geoserver-download/web/` |
-| Health do gateway | `http://localhost:8026/gateway/health` |
+Ao final, abra no navegador **http://localhost:8026/dsp/** (ou a URL que o próprio `./start.sh` mostrar se você mudou porta ou endereço no `.env`).
 
 Detalhamento completo de cada opção e sub-fluxo: [rer-dsp-core](../modules/core.md#os-tres-scripts).
-
-## O que não está incluído
-
-!!! warning "HTTPS / TLS"
-    Não há terminação TLS embutida na stack do core. O gateway responde em HTTP. A responsabilidade de expor os serviços via HTTPS (certificados, renovação, etc.) é do adotante — o gateway é o ponto natural para fazer isso, seja configurando TLS nele ou colocando um balanceador de carga na frente.
-
-!!! warning "Balanceamento e alta disponibilidade"
-    O gateway é um container único, sem réplicas. Distribuir carga entre múltiplas instâncias da stack fica a cargo do adotante.
-
-
-## Variáveis de ambiente
-
-Lista completa das variáveis relevantes do `.env` do core: [rer-dsp-core — Variáveis de ambiente](../modules/core.md#variaveis-de-ambiente-relevantes-env-do-core).
 
 ## Próximos passos
 
@@ -138,4 +151,3 @@ Lista completa das variáveis relevantes do `.env` do core: [rer-dsp-core — Va
 |----------|--------|
 | Entender o fluxo de dados detalhado | [Fluxo de dados](../architecture/data-flow.md) |
 | Ver todas as variáveis de ambiente do core | [rer-dsp-core](../modules/core.md) |
-| Configurar apenas um módulo | [Integrar apenas um módulo](single-module-integration.md) |

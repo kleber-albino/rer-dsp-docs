@@ -1,137 +1,236 @@
-# Bancos de dados — contrato de papéis
+# Bancos de dados
 
-Contrato dos papéis de datasource no fluxo de migração, geração de arquivos e consumo do DSP. Há **dois bancos Postgres** no Compose; metadados Spring Batch ficam em **schemas separados** dentro do `dsp-db` (`data_migration` para migração + watermark; `geo_file_generation` para o job geo-file).
+Contrato de **onde** os dados ficam no DSP — da fonte do adotante até os arquivos de download. O passo a passo entre componentes está em [Fluxo de dados](data-flow.md); visão de camadas em [Arquitetura](overview.md).
 
 ## Sumário
 
-- [Visão geral](#visao-geral)
-- [Papéis de datasource](#papeis-de-datasource)
-- [Colunas geo por banco](#colunas-geo-por-banco)
+- [Todos os bancos e repositórios](#todos-os-bancos-e-repositorios)
+- [Detalhe dos Postgres do Compose](#detalhe-dos-postgres-do-compose)
+- [Diagrama](#diagrama)
+- [Papéis de conexão](#papeis-de-conexao)
+- [Schema `dsp` — negócio e geo leve](#schema-dsp-negocio-e-geo-leve)
+- [Schemas batch no `dsp-db`](#schemas-batch-no-dsp-db)
+- [Pendências de download territorial](#pendencias-de-download-territorial)
 - [Quem lê e quem escreve](#quem-le-e-quem-escreve)
-- [Dual-write do job](#dual-write-do-job)
+- [Dual-write da migração](#dual-write-da-migracao)
 - [SRID via YAML](#srid-via-yaml)
-- [Prefixos de configuração](#prefixos-de-configuracao)
+- [Prefixos Spring (jobs)](#prefixos-spring-jobs)
 
 ---
 
-## Visão geral
+## Todos os bancos e repositórios
 
-A geometria completa fica isolada no banco dos **GeoServers** (`dsp-geoserver-db`). O banco **operacional** (`dsp-db`) guarda atributos de negócio e representações leves (`boundary_box`, `centroid_coordinates`) para consultas da API — sem polígonos completos.
+No fluxo completo do DSP (adotante real com fonte JDBC) entram **quatro** destinos de dados distintos, mais a origem:
 
-Dois GeoServers leem esse mesmo geoserver-db: **Exhibition** (mapa) e **Download** (WFS de exportação via backend).
+| Repositório | Onde fica | Tecnologia | Papel |
+|-------------|-----------|------------|--------|
+| **Banco de origem** | Infraestrutura do adotante (fora do Compose) | PostgreSQL/PostGIS ou outro banco acessível por JDBC | Dados geoespaciais da organização que você quer compartilhar na plataforma — **somente leitura** pelo job de migração |
+| **`dsp-db`** | Container `dsp-db` no Compose | PostgreSQL + PostGIS | Dados operacionais da plataforma (API, busca, KPIs), representações geo leves (bbox/centroide), flags de download territorial e schemas batch dos jobs |
+| **`dsp-geoserver-db`** | Container **`dsp-geoserver-db`** no Compose (**outro** Postgres, não é o `dsp-db`) | PostgreSQL + PostGIS | Mesmas entidades lógicas, mas com **`geom` completa** — só a migração (ETL) e leitores geo (GeoServers, geo-file) usam este banco para polígonos inteiros |
+| **Object storage** | Container `dsp-object-storage` no Compose (profile `object-storage`) | SeaweedFS (API compatível com S3) | Arquivos CSV de download **pré-gerados** por território; o backend lê daqui quando existem, em vez de montar tudo via WFS a cada pedido |
 
 ```mermaid
 flowchart LR
-  src[(source<br/>origem externa)]
-  job[dsp-batch]
-  dsp[(dsp-db<br/>operacional + data_migration)]
-  ex[(dsp-geoserver-db<br/>geometria completa)]
+  src[("Banco de origem<br/>(adotante)")]
+  mig[Job migração]
+  dsp[("dsp-db")]
+  gsdb[("dsp-geoserver-db")]
+  geoJob[Job geo-file]
+  s3[("SeaweedFS")]
+
+  mig -->|lê| src
+  mig -->|grava negócio + bbox/centroid| dsp
+  mig -->|grava geom · outro Postgres| gsdb
+  geoJob -->|lê flags| dsp
+  geoJob -->|lê geom| gsdb
+  geoJob -->|grava CSV| s3
+```
+
+Cada execução da migração faz **dual-write**: um destino operacional (`dsp-db`, sem polígono completo) e **outro banco** (`dsp-geoserver-db`) só para a geometria integral.
+
+Na **demo local** ([Começando rápido](../guides/quick-start.md)) não há banco de origem externo: o `setup.sh` aplica um seed sintético direto nos dois Postgres. Object storage e job geo-file costumam ficar desligados; downloads pequenos podem usar só o GeoServer Download.
+
+---
+
+## Detalhe dos Postgres do Compose
+
+Os dois bancos SQL são **instâncias Postgres separadas** no Compose. Repetem as mesmas tabelas lógicas no schema `dsp`, mas a migração **não** grava `geom` no `dsp-db` — a geometria completa vai **somente** para o `dsp-geoserver-db` (detalhe na [seção seguinte](#schema-dsp-negocio-e-geo-leve)).
+
+| Serviço Compose | Papel resumido |
+|-----------------|----------------|
+| **`dsp-db`** | Tudo que a API e os jobs batch precisam sem polígono completo |
+| **`dsp-geoserver-db`** | Tudo que o mapa e a exportação geo pesada precisam com `geom` integral |
+
+Dentro do **`dsp-db`** há **três schemas**:
+
+| Schema | Conteúdo |
+|--------|----------|
+| `dsp` | Negócio: `territory_level_*`, `area_of_interest`, camadas genéricas, etc. |
+| `data_migration` | Spring Batch da migração + **watermark** (`BATCH_*`, `BATCH_JOB_EXECUTION_SYNC_STATE`) |
+| `geo_file_generation` | Spring Batch do geo-file (`BATCH_*` — **sem** watermark) |
+
+Cada job batch usa **um schema próprio** no mesmo Postgres para não misturar histórico de execução.
+
+---
+
+## Diagrama
+
+As setas seguem **quem faz a operação**: `lê` e `grava` saem do componente (job, backend, GeoServer) e apontam para o banco ou repositório.
+
+```mermaid
+flowchart LR
+  src[(Fonte JDBC<br/>adotante)]
+  mig[dsp-batch<br/>migração]
+  jobGeo[job geo-file]
+  dsp[(dsp-db<br/>dsp + batch schemas)]
+  ex[(dsp-geoserver-db<br/>geom completa)]
+  s3[(SeaweedFS)]
   api[backend]
   gsEx[GeoServer Exhibition]
   gsDl[GeoServer Download]
 
-  src -->|read| job
-  job -->|geom| ex
-  job -->|BATCH_* + watermark| dsp
-  api -->|read| dsp
-  api -->|WFS downloads| gsDl
-  gsEx -->|read| ex
-  gsDl -->|read| ex
+  mig -->|lê| src
+  mig -->|grava negócio + bbox/centroid<br/>batch + flags| dsp
+  mig -->|grava geom completa| ex
+  jobGeo -->|lê flags| dsp
+  jobGeo -->|grava batch + limpa flags| dsp
+  jobGeo -->|lê geom| ex
+  jobGeo -->|grava CSV| s3
+  api -->|lê negócio| dsp
+  api -->|lê CSV| s3
+  api -->|lê WFS fallback| gsDl
+  gsEx -->|lê camadas| ex
+  gsDl -->|lê camadas| ex
 ```
 
 ---
 
-## Papéis de datasource
+## Papéis de conexão
 
-São papéis de **conexão**, não containers Postgres extras. No core há dois serviços (`dsp-db` e `dsp-geoserver-db`). O job de migração mantém **quatro DataSources** no Java (`source`, `target`, `geo-target`, `batch`); `batch` e `target` apontam para o mesmo `dsp-db`, com pools separados.
+São **papéis de datasource**, não bancos extras. O job de migração abre **quatro** conexões Java: `source`, `target`, `geo-target` e `batch` (este último no mesmo host que `target`, schema `data_migration`).
 
-| Papel | Onde (fluxo orquestrado pelo core) | Para que serve |
-|-------|-------------------------------------|----------------|
-| **source** | Banco do adotante, fora do Compose (`spring.datasource.source`) | Origem da migração — só leitura |
-| **dsp-db** | Serviço `dsp-db`, schema `dsp` (`spring.datasource.target`) | Dados de negócio, `boundary_box` e `centroid_coordinates`. Sem `geom` completa. É o que o backend consulta |
-| **geoserver-db** | Serviço `dsp-geoserver-db`, schema `dsp` (`spring.datasource.geo-target`) | Mesmas entidades com coluna `geom` completa. É o que os GeoServers leem |
-| **batch** (migração) | Schema `data_migration` no `dsp-db` (`spring.datasource.batch` do job de migração) | Metadados Spring Batch da migração: `BATCH_*` e `BATCH_JOB_EXECUTION_SYNC_STATE` (watermark). URL com `currentSchema=data_migration` |
-| **batch** (geo-file) | Schema `geo_file_generation` no `dsp-db` (job geo-file) | Metadados Spring Batch do job geo-file: `BATCH_*` (sem watermark). Isolado da migração |
+| Papel | Serviço / schema | Uso |
+|-------|------------------|-----|
+| **source** | JDBC externo | Origem — somente leitura |
+| **target** | `dsp-db` · schema `dsp` | Escrita de negócio + bbox/centroid; leitura do backend |
+| **geo-target** | `dsp-geoserver-db` · schema `dsp` | Escrita/leitura de `geom` completa; GeoServers e geo-file |
+| **batch** (migração) | `dsp-db` · `data_migration` | Execução Spring Batch + watermark |
+| **batch** (geo-file) | `dsp-db` · `geo_file_generation` | Execução Spring Batch do geo-file |
 
-`dsp-db` e `geoserver-db` repetem as tabelas lógicas (`territory_level_1`, `territory_level_2`, `territory_level_3`, `area_of_interest`). IDs e FKs são `VARCHAR` (`territory_level_*`: `varchar(64)`; AOI/camadas: `varchar(255)` no `id`). A diferença geo está na seção seguinte.
+O job geo-file também usa **target** (flags territoriais) e **geo-target** (exportação), com batch em `geo_file_generation`.
+
+Object storage (SeaweedFS) não é Postgres: o backend e o geo-file acessam via API S3 quando o profile `object-storage` está ativo.
 
 ---
 
-## Colunas geo por banco
+## Schema `dsp` — negócio e geo leve
 
-| Coluna | Tipo PostGIS | dsp-db | geoserver-db |
-|--------|--------------|--------|---------------|
-| Atributos de negócio (`id`, `name`, FKs, etc.) | — | sim | sim |
+As mesmas tabelas lógicas existem nos **dois** Postgres (`territory_level_1`, `territory_level_2`, `territory_level_3`, `area_of_interest` e camadas configuradas). IDs territoriais são `VARCHAR(64)`; AOI/camadas usam `VARCHAR(255)` no `id`.
+
+| Coluna | Tipo PostGIS | `dsp-db` | `dsp-geoserver-db` |
+|--------|--------------|----------|---------------------|
+| Atributos (`id`, `name`, FKs, …) | — | sim | sim |
 | `created_at` / `updated_at` | `timestamptz` | sim | sim |
-| `geom` | `geometry` (UA: `MultiPolygon` no DDL do core; AOI/camadas: tipo da origem) | **não** | **sim** |
+| `geom` | `geometry` | **não** | **sim** |
 | `boundary_box` | `geometry(Polygon)` | **sim** | **não** |
 | `centroid_coordinates` | `geometry(Point)` | **sim** | **não** |
 
-O writer do job deriva `boundary_box` e `centroid_coordinates` a partir da geometria lida na origem e grava só em `dsp-db`. O `geoserver-db` recebe a geometria completa em `geom`.
+O job deriva `boundary_box` e `centroid_coordinates` na origem e grava só no `dsp-db`. A geometria integral vai para `geom` no geoserver-db.
 
-`created_at` é obrigatório no destino (watermark). `updated_at` existe nas tabelas oficiais e é preenchido quando o YAML declara `updated-at-column`.
+`created_at` no destino é obrigatório (base do watermark). `updated_at` é preenchido quando o YAML declara `updated-at-column`.
+
+Por que não guardar o polígono inteiro no `dsp-db`? Ver o aviso em [Arquitetura — Fluxo de dados](overview.md#fluxo-de-dados).
+
+---
+
+## Schemas batch no `dsp-db`
+
+| Schema | Job | O que persiste |
+|--------|-----|----------------|
+| `data_migration` | `rer-dsp-job-data-migration` | Histórico `BATCH_*` e watermark em `BATCH_JOB_EXECUTION_SYNC_STATE` (avança só após `COMPLETED`) |
+| `geo_file_generation` | `rer-dsp-job-geo-file-generation` | Histórico `BATCH_*` das rodadas de pré-geração |
+
+SQL de init desses schemas vem do `rer-dsp-core` (imagens `dsp-db` e jobs). Detalhe operacional: [rer-dsp-core](../modules/core.md).
+
+---
+
+## Pendências de download territorial
+
+Colunas só em `territory_level_2` e `territory_level_3` no **`dsp-db`**:
+
+| Coluna | Função |
+|--------|--------|
+| `requires_s3_file_regeneration` | `true` = geo-file deve gerar de novo os arquivos desse território |
+| `last_generated_s3_file_at` | Última vez em que todos os formatos habilitados foram publicados no bucket |
+
+Fluxo resumido:
+
+1. A migração processa o delta definido pelo **watermark** (criação/atualização desde o último sucesso).
+2. Se a execução termina **`COMPLETED`**, marca territórios afetados na mesma janela temporal (`requires_s3_file_regeneration = true`). Na primeira carga, marca o conjunto territorial relevante.
+3. O geo-file, na agenda configurada no setup, processa só pendências, publica no SeaweedFS e desliga a flag por território quando termina todos os formatos.
+
+Se a migração **falha**, as flags **não** mudam. Mais contexto: [rer-dsp-job-geo-file-generation](../modules/job-geo-file-generation/overview.md).
 
 ---
 
 ## Quem lê e quem escreve
 
-| Componente | source | dsp-db | geoserver-db | batch |
-|------------|--------|--------|---------------|-------|
-| `rer-dsp-job-data-migration` | leitura | escrita (bbox/centroid) | escrita (`geom`) | escrita (`BATCH_*` + watermark) |
-| `rer-dsp-backend` / `rer-dsp-core` | — | leitura/escrita de negócio (schema `dsp`) | — | — |
-| GeoServer Exhibition | — | — | leitura (WMS/WFS mapa) | — |
-| GeoServer Download | — | — | leitura (WFS downloads via backend) | — |
+| Componente | Fonte JDBC | `dsp-db` | `dsp-geoserver-db` | Outros |
+|------------|------------|----------|---------------------|--------|
+| Job migração | leitura | escrita `dsp` + `data_migration` | escrita `geom` | — |
+| Job geo-file | — | **lê** flags · **grava** `geo_file_generation` e atualiza flags | **lê** `geom` | **grava** CSV no SeaweedFS |
+| Backend | — | **lê** / **grava** negócio (`dsp`) | — | **lê** S3 · **lê** WFS no Download (via API) |
+| GeoServer Exhibition | — | — | **lê** camadas (WMS/WFS) | — |
+| GeoServer Download | — | — | **lê** camadas (WFS) | — |
+| Core | — | init SQL | init SQL | sobe SeaweedFS no profile `object-storage` |
 
-Os dois GeoServers apontam **somente** para `dsp-geoserver-db` (mesmo PostGIS; processos isolados).
+Os dois GeoServers usam **apenas** `dsp-geoserver-db` (processos separados, mesmo dataset).
 
 ---
 
-## Dual-write do job
+## Dual-write da migração
 
-Cada execução do job faz **1 source → 2 targets** (camadas genéricas: só geo-target):
+Cada execução com delta faz **uma leitura na origem** e **duas escritas em bancos diferentes** (camadas genéricas podem gravar só no geo-target):
 
-1. Lê origem (atributos + geometria), recortada pelo watermark e pelo `where-clause`.
-2. Grava em `dsp-db`: atributos + `boundary_box` + `centroid_coordinates`.
-3. Grava em `geoserver-db`: atributos + `geom` completa.
+1. Lê atributos + geometria na fonte JDBC (watermark + `where-clause`).
+2. UPSERT no **`dsp-db`**: atributos + `boundary_box` + `centroid_coordinates` — **sem** coluna `geom`.
+3. UPSERT no **`dsp-geoserver-db`** (outro Postgres): mesmos atributos + **`geom` completa**.
 
 ```mermaid
 flowchart LR
-  src[(Fonte JDBC<br/>do adotante)] -->|1. Lê atributos + geometria| job[dsp-batch]
-
-  subgraph write ["2. Dual-write — UPSERT ON CONFLICT"]
-    job -->|"atributos + boundary_box<br/>+ centroid_coordinates"| dspdb[(dsp-db)]
-    job -->|"atributos + geom<br/>completa"| exdb[(geoserver-db)]
+  job[dsp-batch] -->|1. lê| src[(Fonte JDBC)]
+  subgraph w ["2. grava em dois Postgres"]
+    job -->|grava sem geom| dsp[(dsp-db)]
+    job -->|grava geom completa| ex[(dsp-geoserver-db)]
   end
 ```
 
-Detalhe do watermark: [Visão geral do job](../modules/job-data-migration/overview.md#sincronizacao-incremental-watermark).
+Watermark incremental: [Visão geral do job](../modules/job-data-migration/overview.md#sincronizacao-incremental-watermark).
 
 ---
 
 ## SRID via YAML
 
-O SRID **não** é fixado em código. No DDL oficial das unidades administrativas do core, `geom` não leva typmod de SRID. O DDL automático de AOI/camadas pode gravar o SRID no `CREATE TABLE`.
+O SRID não é fixo no código. No DDL de unidades administrativas do core, `geom` pode ir sem typmod; AOI/camadas geradas automaticamente podem incluir SRID no `CREATE TABLE`.
 
-| Onde | Como |
-|------|------|
-| DDL das UA (core) | `geom` sem typmod de SRID |
-| Job | Cada bloco informa `srid` no YAML (ex.: `4674`, `4326`) |
-| Leitura (UA, AOI e camadas) | `ST_Transform` para o `srid` do YAML antes do GeoJSON |
+| Etapa | Comportamento |
+|-------|----------------|
+| YAML | Cada bloco declara `srid` (ex.: `4674`, `4326`) |
+| Leitura | `ST_Transform` para o SRID do bloco antes do GeoJSON |
 | Escrita | `ST_SetSRID(ST_Force2D(ST_GeomFromGeoJSON(?)), srid)` |
-| Validação | Conferir `ST_SRID(...)` contra o `srid` do YAML correspondente |
 
-Instalações distintas podem usar SRIDs diferentes por camada, desde que o YAML e a origem estejam alinhados.
+Camadas distintas podem usar SRIDs diferentes se origem e YAML estiverem alinhados.
 
 ---
 
-## Prefixos de configuração
+## Prefixos Spring (jobs)
 
-| Papel | Prefixo Spring | Exemplo Compose (core) |
-|-------|----------------|------------------------|
-| source | `spring.datasource.source` | — (externo; `DSP_SOURCE_JDBC_URL`, `DSP_SOURCE_DB_USER`, `DSP_SOURCE_DB_PASSWORD`) |
-| dsp-db (target) | `spring.datasource.target` | `dsp-db` |
-| geoserver-db (geo-target) | `spring.datasource.geo-target` | `dsp-geoserver-db` |
-| batch (migração) | `spring.datasource.batch` | `dsp-db`, schema `data_migration` |
-| batch (geo-file) | `spring.datasource.batch` | `dsp-db`, schema `geo_file_generation` |
+| Papel | Propriedade | Destino típico no core |
+|-------|-------------|-------------------------|
+| source | `spring.datasource.source` | JDBC do adotante (variáveis `DSP_SOURCE_*` no `.env`) |
+| target | `spring.datasource.target` | `dsp-db`, schema `dsp` |
+| geo-target | `spring.datasource.geo-target` | `dsp-geoserver-db`, schema `dsp` |
+| batch (migração) | `spring.datasource.batch` | `dsp-db`, `currentSchema=data_migration` |
+| batch (geo-file) | `spring.datasource.batch` | `dsp-db`, `currentSchema=geo_file_generation` |
 
-Detalhe operacional: [Job data-migration — Configuração e execução](../modules/job-data-migration/configuration.md) · validação: [Validação pós-migração](../modules/job-data-migration/validation.md) · orquestração dos bancos: [rer-dsp-core](../modules/core.md).
+Visão do job de migração: [Visão geral](../modules/job-data-migration/overview.md). Checagens após carga: [Validação pós-migração](../modules/job-data-migration/post-migration-validation.md).

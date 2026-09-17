@@ -1,6 +1,6 @@
-# RER DSP — Documentação
+# [RER](https://www.digitalpublicgoods.net/r/rural-environmental-registry-registration-module) DSP — Documentação
 
-Wiki da **Data Sharing Platform (DSP)** do ecossistema **RER**. Fonte de verdade para onboarding, arquitetura e padrões dos repositórios do DSP.
+Wiki da **Data Sharing Platform (DSP)** do ecossistema [**RER**](https://www.digitalpublicgoods.net/r/rural-environmental-registry-registration-module). Fonte de verdade para onboarding, arquitetura e padrões dos repositórios do DSP.
 
 ## Pré-requisitos
 

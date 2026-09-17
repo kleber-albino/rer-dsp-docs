@@ -1,139 +1,164 @@
 # rer-dsp-job-data-migration — Visão geral
 
-Este módulo é parte do [DSP](../../index.md) — veja a documentação completa em [rer-dsp-docs](../../index.md). As informações abaixo tratam apenas deste módulo.
+Job que **copia os dados geográficos do banco da sua organização** para dentro do DSP, de forma automática e repetível. Orquestração pelo [rer-dsp-core](../core.md) (`./setup.sh`). Detalhe dos bancos: [Bancos de dados](../../architecture/databases.md).
 
-Conceitos, ordem de execução e pré-requisitos da migração geoespacial no RER DSP. A implementação é o artefato Maven `dsp-batch`.
+## Sumário
 
-## Por que migrar
+- [Como funciona](#como-funciona-visao-simples)
+- [O que é copiado](#o-que-e-copiado)
+- [Fluxo em uma imagem](#fluxo-em-uma-imagem)
+- [Ordem da cópia](#ordem-da-copia)
+- [Só o que mudou desde a última vez](#so-o-que-mudou-desde-a-ultima-vez)
+- [O que acontece em cada execução](#o-que-acontece-em-cada-execucao)
+- [Mapa e downloads](#mapa-e-downloads)
+- [Quando o job roda no dia a dia](#quando-o-job-roda-no-dia-a-dia)
+- [Detalhe técnico (referência rápida)](#detalhe-tecnico-referencia-rapida)
+- [Onde aprofundar](#onde-aprofundar)
 
-O DSP trabalha com uma base PostGIS própria (dois destinos), sincronizada a partir do banco da organização adotante — sem expor a base de origem diretamente.
+---
 
-## Escopo da migração
+## Como funciona
 
-| Domínio | Jobs | Observação |
-|---------|------|------------|
-| Unidades administrativas | level-1, level-2, level-3 | Hierarquia configurável via YAML — 3 níveis (ex.: continente → país → divisão administrativa) |
-| Área de interesse | `area-of-interest-geoserver-job` | Ex.: imóveis rurais. DDL automático nos dois destinos; colunas canônicas (`id`, `geom`, `created_at`, …) |
-| Camadas genéricas (opcional) | `layer-jobs` | Qualquer tabela PostGIS extra do adotante, publicada só como layer WMS (não vai para o `dsp-db` operacional). Pré-requisito: área de interesse já migrada. Guia: [Migração de camadas genéricas](layer-migration.md) |
+Imagine que o **banco da organização** é a pasta de trabalho onde os cadastros são atualizados, e o **DSP** precisa de uma **cópia própria** para o site público funcionar rápido e sem expor esse banco direto na internet.
 
-O significado de cada level não está fixo no código — vem das tabelas e colunas configuradas no YAML.
+O job de migração faz três coisas principais:
 
-## Atores do fluxo
+1. **Lê** o banco de origem (somente leitura — não altera nada lá).
+2. **Grava em dois lugares dentro do DSP:**
+   - Um banco **leve**, usado pela API e pelas telas (nomes, datas, um retângulo e um ponto no mapa por registro — não o polígono inteiro).
+   - Outro banco **com o desenho completo** dos imóveis e territórios, usado para exibir o mapa e exportações pesadas.
+3. **Na próxima execução, não copia tudo de novo** — só registros **novos ou alterados** desde a última cópia bem-sucedida (isso é o *watermark*, um “marca-página” guardado pelo próprio job).
+
+Se um registro **sumiu** na origem, o job também pode **remover** a cópia no DSP (varredura periódica de “órfãos”).
+
+Ele **não** é o programa que publica as camadas no mapa do site: isso o `./setup.sh` faz depois que os dados já estão nos bancos. Ele também **não** gera os arquivos grandes de download no armazenamento S3 — só **avisa** quais regiões precisam disso; o [job geo-file](../job-geo-file-generation/overview.md) gera os arquivos.
+
+---
+
+## O que é copiado
+
+| Tipo de dado | Exemplo no CAR | Observação |
+|--------------|----------------|------------|
+| Três níveis de território | Estado → município → … | Hierarquia configurável no `./config.sh` |
+| Área de interesse | Imóvel rural / polígono declarado | O que o cidadão busca no mapa |
+| Camadas extras (opcional) | Outras tabelas com mapa | Só vão para o banco do mapa — [guia](generic-layers.md) |
+
+Os nomes “nível 1, 2, 3” são genéricos: o que cada nível significa depende das tabelas que você configurou, não de um padrão fixo no código.
+
+---
+
+## Fluxo em uma imagem
 
 ```mermaid
 flowchart LR
-  src[(Fonte JDBC do adotante)] -->|read| app[dsp-batch]
-  app -->|"bbox + centroid"| tgt[(dsp-db)]
-  app -->|geom| geo[(geoserver-db)]
-  app -->|"BATCH_* + watermark"| tgt
-  geo -.->|layers WMS/WFS| gsEx[GeoServer Exhibition]
-  geo -.->|layers WFS downloads| gsDl[GeoServer Download]
+  origem[(Banco da organização)]
+  job[Job de migração]
+  leve[(Banco leve do DSP)]
+  mapa[(Banco do mapa)]
+
+  job -->|lê| origem
+  job -->|grava textos e resumo geo| leve
+  job -->|grava desenho completo| mapa
 ```
 
-| Componente | Responsabilidade |
-|------------|------------------|
-| Fonte (`source`) | Banco JDBC do adotante — fonte da verdade a ser lida |
-| `dsp-db` (`target`) | Base operacional — negócio + bbox/centroid |
-| `geoserver-db` (`geo-target`) | Geometria completa (`geom`) para os GeoServers |
-| `data_migration` (`batch`) | Histórico Spring Batch e watermark incremental — schema no mesmo `dsp-db` |
-| `dsp-batch` | Orquestra detecção por watermark, partição, dual-write UPSERT |
-| GeoServer Exhibition / Download | Consomem **somente** `geoserver-db` |
+No Compose, os bancos se chamam `dsp-db` (leve) e `dsp-geoserver-db` (mapa).
 
-!!! tip "Publicação de camadas"
-    O JAR **não** publica camadas nos GeoServers. No fluxo orquestrado, o `rer-dsp-core` faz isso via `populate_geoserver.sh` quando a carga inicial roda no `./setup.sh` (**Run now**), ou via `publish_geoservers.sh` no entrypoint do job após a **primeira carga agendada** (**Schedule for later**). O `layer-name` no YAML precisa estar alinhado ao `mapLayersConfig.json`.
+---
 
-## Pipeline de um job
+## Ordem da cópia
 
-Todos os jobs (unidades administrativas, AOI e camadas) seguem o mesmo pipeline:
+A cópia segue a **hierarquia**, como montar um quebra-cabeça de dentro para fora:
+
+```text
+nível 1 → nível 2 → nível 3 → imóveis (área de interesse) → camadas extras (se houver)
+```
+
+O pai precisa existir antes do filho (por exemplo, município antes do imóvel dentro dele). Por isso o job não mistura essa ordem.
+
+---
+
+## Só o que mudou desde a última vez
+
+Na **primeira carga**, entram os registros que têm data de criação preenchida na origem (conforme configurado no `./config.sh`).
+
+Nas **cargas seguintes**, o job compara com a data/hora da **última execução concluída com sucesso**:
+
+- Copia o que foi **criado** depois dessa marca.
+- Se a origem tem coluna de **atualização**, copia também o que foi **alterado** depois dessa marca.
+
+Se **nada mudou**, a execução termina rápido (“não havia trabalho”). A marca só avança quando o job termina **sem erro** — assim o DSP não “pula” dados se algo falhou no meio.
+
+Fuso horário das datas na origem: em geral `America/Sao_Paulo`, salvo configuração diferente no YAML.
+
+---
+
+## O que acontece em cada execução
+
+Em termos simples, o job repete sempre o mesmo roteiro:
 
 ```mermaid
 flowchart TD
-  A["ChangeDetectionStep<br/>watermark temporal<br/>+ órfãos periódicos"] --> B{"ChangeDecider<br/>decide se há algo<br/>a processar"}
-  B -->|sem delta| C["SKIP<br/>encerra sem gravar<br/>(órfãos já podem ter sido apagados)"]
-  B -->|há delta| D["MasterStep particionado<br/>fatia a leitura em partições"]
-  D --> E["Workers: Reader → Processor → Writer<br/>lê, valida e grava cada partição"]
-  E -->|bbox + centroid| F1[(dsp-db)]
-  E -->|geom completa| F2[(geoserver-db)]
-  A -.->|registra execução + watermark| M[(data_migration)]
-  E -.->|registra execução| M
+  A[1. Olha o que mudou na origem] --> B{2. Tem algo novo ou alterado?}
+  B -->|não| C[Encerra sem copiar de novo]
+  B -->|sim| D[3. Copia em partes para não travar]
+  D --> E[4. Atualiza os dois bancos do DSP]
+  A --> F[De vez em quando: remove o que sumiu na origem]
 ```
 
-| Etapa | O que faz |
-|-------|-----------|
-| Change detection | Compara origem × destino pelo **watermark** (`creation-date-column` + `updated-at-column` opcional) e, periodicamente, remove órfãos |
-| Decider | `PROCESS` ou `SKIP` |
-| Partitioner | Fatia por `partition-column` (se numérica ou VARCHAR com valor numérico) |
-| Reader | Páginas com geometria em GeoJSON; UA, AOI e camadas aplicam `ST_Transform` para o `srid` do YAML |
-| Processor | Pass-through (sem transformação de negócio) |
-| Writer | UPSERT `ON CONFLICT` em dois destinos: `dsp-db` (bbox + centroid) e `geoserver-db` (`geom` completa). Camadas genéricas gravam só no geo-target |
+Tecnicamente isso é detecção por watermark, decisão de pular ou processar, leitura em partes e gravação com “atualiza se já existir, senão insere” (*UPSERT*).
 
-## Ordem obrigatória
+---
 
-```text
-admin-unit level-1
-    → admin-unit level-2
-        → admin-unit level-3
-            → area-of-interest
-                → camadas genéricas (layer-jobs)
-```
+## Mapa e downloads
 
-Essa ordem é obrigatória por causa de FKs no destino: filhos referenciam pais já migrados; camadas genéricas dependem de `area_of_interest_id` já existir no geo-target. O `JobRunner` dos jobs fixos roda antes do runner de camadas (`@Order(1)` e `@Order(2)`).
+| Etapa | Quem faz |
+|-------|----------|
+| Dados nos bancos | Job de migração |
+| Camadas visíveis no GeoServer / mapa | `./setup.sh` (ou publicação automática após primeira carga agendada) |
+| Arquivos CSV prontos no S3 | [Job geo-file](../job-geo-file-generation/overview.md), em horário definido no setup |
 
-## Sincronização incremental (watermark)
+Quando uma migração **termina bem**, o job **marca** quais estados/municípios (níveis 2 e 3) precisam de **novo arquivo de download**. Se a migração **falha**, essas marcas **não mudam** — evita publicar download com dados incompletos.
 
-Não há mais hash de atributos nem intervalo fixo `DATE_RANGE`. Todos os jobs usam o mesmo motor (`WatermarkChangeDetectionEngine`).
+---
 
-| Situação | Comportamento |
-|----------|---------------|
-| Primeira carga (sem watermark) | Lê registros com `creation-date-column` preenchida |
-| Cargas seguintes | Lê o que foi **criado** ou **atualizado** depois do watermark: `(criação > watermark) OR (updated_at IS NOT NULL AND updated_at > watermark)` |
-| Sem `updated-at-column` | Só a coluna de criação entra no filtro incremental |
-| Órfãos | Scan periódico (intervalo de 24 h). Remove no destino o que sumiu na origem. Se só houver órfãos, o job apaga e **pula o UPSERT** |
-| Avanço do watermark | Só depois de job `COMPLETED`, em `data_migration.BATCH_JOB_EXECUTION_SYNC_STATE` |
+## Quando o job roda no dia a dia
 
-`creation-date-column` é **obrigatório** em todos os jobs. Tipos aceitos na origem: `timestamptz`, `timestamp` e `date` (`date` tem granularidade diária). `time`/`timetz` são rejeitados.
+Quem define isso é o **`./setup.sh`**, não o wizard do `./config.sh`:
 
-O destino exige `created_at` / `updated_at` como `timestamptz`. Fuso das colunas sem offset: `batch.source-timezone` (default do produto `America/Sao_Paulo`), com override opcional `source-timezone` por job.
+| Escolha no setup | Efeito prático |
+|------------------|----------------|
+| Carga única agora, sem repetir | Copia uma vez no setup e o container do job desliga |
+| Carga única em data/hora | Espera e copia uma vez; pode publicar o mapa depois |
+| Sincronização periódica | Copia no setup (ou na data agendada) e **volta a copiar** de tempos em tempos (cron no `.env`) |
 
-Cada job tem um `sync-key` (default: `admin_unit_level_1` / `_2` / `_3`, `area_of_interest`, ou a chave da camada).
+Cada “volta” do job é um processo que **sobe, trabalha e desliga**; no modo contínuo, um agendador dentro do container dispara essas voltas.
 
-## Pré-requisitos para executar o job sem o `rer-dsp-core`:
+---
 
-- [ ] Java 21 e Maven Wrapper (`./mvnw`)
-- [ ] Quatro DataSources acessíveis (source, target, geo-target; batch no mesmo banco que target, schema `data_migration`)
-- [ ] Extensão PostGIS na origem e no destino
-- [ ] Schema `data_migration` aplicado no banco de destino (`db/batch_metadata/01_spring_batch_schema.sql`)
-- [ ] PRIMARY KEY (ou unique) nas colunas de conflito do destino
-- [ ] YAML com tabelas, colunas temporais e `srid`
-- [ ] Flags `execution-jobs.*` coerentes com a etapa
+## Detalhe técnico (referência rápida)
 
-Na subida, o `DatabaseConnectivityInitializer` testa `SELECT 1` nos quatro datasources (timeout 5 s) e falha se algum estiver indisponível.
+| Tópico | Referência |
+|--------|------------|
+| Artefato | Maven `dsp-batch`, Java 21, Spring Batch |
+| Conexões | `source`, `target` (`dsp-db`), `geo-target` (`dsp-geoserver-db`), `batch` (schema `data_migration`) |
+| Motor incremental | `WatermarkChangeDetectionEngine` · tabela `BATCH_JOB_EXECUTION_SYNC_STATE` |
+| Modos no `.env` | `DSP_MIGRATION_EXECUTION_MODE`: `once`, `scheduled-once`, `continuous` |
+| Flags de download | `requires_s3_file_regeneration` em `territory_level_2` / `_3` |
 
-O JAR é **one-shot**: sobe, roda os jobs habilitados e encerra (`System.exit`). No Docker do core, o modo contínuo é o **supercronic** no entrypoint — não há cron no YAML do job.
+Rodar o JAR isolado (sem core): Java 21, `./mvnw`, quatro bancos acessíveis e `application.yaml` gerado pelo `./config.sh` (repositório `rer-dsp-core`).
 
-## Execução via Docker (core)
+!!! tip "Publicação de camadas"
+    O nome da camada no YAML do job deve bater com `mapLayersConfig.json`. **Run now** publica ao fim do setup; **Schedule for later** publica após a primeira migração agendada.
 
-No Compose do `rer-dsp-core`, a imagem `dsp-job-migration` é construída com contexto extra `dsp_config` (`rer-dsp-core/config`). No build, entram:
-
-- `application.yaml` e `mapLayersConfig.json` (via `select-runtime-config.sh`)
-- `entrypoint.sh`, `publish_geoservers.sh` e `populate_geoserver.sh`
-
-| `DSP_MIGRATION_EXECUTION_MODE` | Comportamento |
-|--------------------------------|---------------|
-| `once` | Um ciclo JAR e encerra (setup **Run now + One-time**) |
-| `scheduled-once` | Espera `DSP_MIGRATION_SCHEDULED_AT`, um ciclo, publica GeoServers, encerra |
-| `continuous` | Primeira carga (no setup ou na data agendada), depois supercronic em `DSP_MIGRATION_CRON` |
-
-No modo **continuous**, o wrapper do supercronic usa **`flock`** para não sobrepor ciclos. Falha do JAR **não** derruba o container — o próximo cron tenta de novo.
-
-Quando a primeira carga é **agendada**, `publish_geoservers.sh` chama o mesmo `populate_geoserver.sh` do `./setup.sh` contra Exhibition e Download na rede Docker.
+---
 
 ## Onde aprofundar
 
 | Tema | Página |
 |------|--------|
-| Contrato dos bancos (4 papéis) | [Bancos de dados](../../architecture/databases.md) |
-| YAML, datasources e comandos | [Configuração e execução](configuration.md) |
-| Quais colunas são obrigatórias e o nome no destino | [Contrato de colunas](configuration.md#contrato-de-colunas) |
-| Camadas genéricas (tabelas PostGIS extras) | [Migração de camadas genéricas](layer-migration.md) |
-| Checklist e queries pós-migração | [Validação pós-migração](validation.md) |
+| Bancos e dual-write | [Bancos de dados](../../architecture/databases.md) |
+| Camadas genéricas | [Migração de camadas genéricas](generic-layers.md) |
+| Wizard e `application.yaml` | [rer-dsp-core](../core.md) · `config/Job-Data-Migration/application/` |
+| Checklist pós-carga | [Validação pós-migração](post-migration-validation.md) |
+| Pré-geração de CSV | [rer-dsp-job-geo-file-generation](../job-geo-file-generation/overview.md) |
+| Fluxo entre componentes | [Fluxo de dados](../../architecture/data-flow.md) |

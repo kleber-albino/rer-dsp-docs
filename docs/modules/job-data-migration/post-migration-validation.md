@@ -204,4 +204,4 @@ Repita o padrão para level-3 → level-2. AOI: `territory_level_3_id` deve exis
 | App sobe e encerra "ok" sem dados | Nenhuma flag `true` | Habilitar ao menos um job |
 | Incremental “atrasado” | `updated-at-column` nula ou ausente | Preencher a coluna ou resetar o `sync-key` |
 
-Configuração completa: [Configuração e execução](configuration.md).
+Visão do job: [Visão geral](overview.md).

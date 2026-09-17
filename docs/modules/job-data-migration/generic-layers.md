@@ -1,6 +1,6 @@
 # rer-dsp-job-data-migration — Migração de camadas genéricas
 
-Guia didático do módulo de **camadas geográficas** (`batch.layers`) do job [`rer-dsp-job-data-migration`](overview.md). Documentação geral do job (stack, datasources, jobs fixos, comandos): [Configuração e execução](configuration.md).
+Guia didático do módulo de **camadas geográficas** (`batch.layers`) do job [`rer-dsp-job-data-migration`](overview.md). Visão geral do job: [Visão geral](overview.md).
 
 ---
 
@@ -117,8 +117,6 @@ batch:
       layer-name: rivers
       srid: 4674
 ```
-
-Quadro completo origem → destino (incluindo extras): [Contrato de colunas](configuration.md#contrato-de-colunas).
 
 | Propriedade | Obrigatória | Descrição |
 |-------------|-------------|-----------|
@@ -356,7 +354,7 @@ Logs úteis (pacote `br.car.dsp_batch`):
 
 ## No wizard do rer-dsp-core
 
-No estágio **2/4** (`etl.layers[]` do `adopter-config.yaml`), cada camada é configurada **uma vez** e alimenta migração, mapa e downloads:
+No estágio **2/6** (`etl.layers[]` do `adopter-config.yaml`), cada camada é configurada **uma vez** e alimenta migração, mapa e downloads:
 
 | Campo wizard / YAML | Uso |
 |---------------------|-----|
@@ -378,6 +376,6 @@ Detalhe completo do wizard: [rer-dsp-core](../core.md#configsh).
 
 | Documento | Conteúdo |
 |-----------|----------|
-| [Configuração e execução](configuration.md) | Stack, datasources, jobs fixos, comandos |
+| [Visão geral](overview.md) | Lógica do job, watermark, execução no core |
 | [Visão geral](overview.md) | Ordem e watermark |
-| [Validação pós-migração](validation.md) | Checklist pós-migração |
+| [Validação pós-migração](post-migration-validation.md) | Checklist pós-migração |

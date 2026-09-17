@@ -77,10 +77,4 @@ Endpoints consumidos pelo frontend:
 | `GET /geoServices/getRegions` | Regiões |
 | `GET /state/getAll` | Estados |
 
-## Integração com os demais módulos
-
-- Depende do **backend** para todos os dados de negócio e para downloads de arquivo — sem um backend acessível, a maior parte da UI não funciona.
-- Consome o **GeoServer Exhibition** diretamente via WMS/WFS apenas para mapas e geometria de AOI, usando as URLs de camadas retornadas pelo backend.
-- Não tem dependência direta de banco de dados.
-
-Veja também: [Dependências entre módulos](../architecture/dependencies.md), [Fluxo de dados](../architecture/data-flow.md).
+Veja também: [Fluxo de dados](../architecture/data-flow.md), [Arquitetura](../architecture/overview.md).

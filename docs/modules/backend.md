@@ -30,7 +30,7 @@ O `rer-dsp-backend` é a API REST do DSP: expõe dados de negócio, hierarquia t
 ./gradlew bootRun
 ```
 
-Ou via Docker, orquestrado pelo `rer-dsp-core` — que oferece dois modos: [demo](../getting-started.md) (seed sintético, sem banco externo) ou [instalação real](../guides/full-installation.md) (dados do adotante via fonte JDBC). No Docker o container não publica porta no host: a API é alcançada pelo gateway do core, em `/dsp-backend`.
+Ou via Docker, orquestrado pelo `rer-dsp-core` — que oferece dois modos: [demo](../guides/quick-start.md) (seed sintético, sem banco externo) ou [instalação real](../guides/full-installation.md) (dados do adotante via fonte JDBC). No Docker o container não publica porta no host: a API é alcançada pelo gateway do core, em `/dsp-backend`.
 
 ## Variáveis de ambiente
 
@@ -71,8 +71,6 @@ Definidas com valores default em `src/main/resources/application.properties`.
 | `GET /territory/options` | Opções de território por hierarquia |
 | `GET /territory/boundary-box` | Bounding box de território |
 
-Documentação interativa: Swagger UI em `{context-path}/swagger-ui.html`; OpenAPI JSON em `/api-docs`. Na stack do core, `http://localhost:8026/dsp-backend/swagger-ui.html`.
-
 ## Configuração de instalação (labels, telas, KPIs)
 
 Os **dados** territoriais (unidades L1/L2/L3) ficam nas tabelas `dsp.territory_level_*`. Os **nomes exibidos** dos filtros ("Level 1", "Region", etc.) vêm de um arquivo JSON externo, sem necessidade de alterar código.
@@ -90,6 +88,8 @@ O frontend consome `GET /config/installation` para montar filtros, títulos de t
 `screens.home.detail.fields` é a lista exclusiva da ficha da AOI (ordem preservada). Cada item tem `field` (nome da coluna no destino, ou chave `calculated.*`) e `label`. Lista vazia ou ausente: a API devolve `[]` e o detalhe devolve `attributes: {}` — a UI atual continua no DTO estrutural. Lista não vazia: o detalhe resolve `attributes` com exatamente essas chaves.
 
 ![Ficha da AOI com fallback do DTO estrutural](../assets/images/aoi-detail-fallback.png)
+
+*Legenda: painel de detalhe da área de interesse quando `screens.home.detail.fields` está vazio ou ausente — a UI usa o DTO estrutural (`latitude`/`longitude`, território, data de alteração) em vez do mapa `attributes`.*
 
 Chaves de `field`:
 
@@ -212,4 +212,4 @@ O conteúdo institucional da página About pode ser configurado pelo adotante vi
 - Lê exclusivamente o banco **dsp-db** — nunca acessa `geoserver-db` diretamente.
 - Consulta o **GeoServer Download** via HTTP/WFS para downloads de arquivo.
 
-Veja também: [Bancos de dados](../architecture/databases.md), [Dependências entre módulos](../architecture/dependencies.md).
+Veja também: [Bancos de dados](../architecture/databases.md), [Fluxo de dados](../architecture/data-flow.md).
