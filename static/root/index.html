@@ -35,11 +35,11 @@
         document.body.classList.remove("js-redirect");
       }, 5000);
       function docsBasePath() {
-        // Derives the base path from the current URL (strips the trailing
-        // "/" or "index.html") instead of hardcoding the repo name, so this
-        // page works on any fork/org/custom domain, whether GitHub Pages
-        // serves it at the domain root or under a project subpath.
-        return location.pathname.replace(/\/[^/]*$/, "");
+        var match = location.pathname.match(/^(.*)\/(pt-br|en)(?:\/|$)/);
+        if (match) {
+          return match[1];
+        }
+        return location.pathname.replace(/\/index\.html$/i, "").replace(/\/$/, "");
       }
 
       var base = docsBasePath();
