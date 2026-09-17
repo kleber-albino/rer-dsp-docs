@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>RER DSP — Documentation</title>
+  <link rel="alternate" hreflang="pt-BR" href="https://rural-environmental-registry.github.io/rer-dsp-docs/pt-br/">
+  <link rel="alternate" hreflang="en" href="https://rural-environmental-registry.github.io/rer-dsp-docs/en/">
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 32rem; margin: 3rem auto; padding: 0 1rem; line-height: 1.5; }
+    h1 { font-size: 1.25rem; }
+    ul { padding-left: 1.25rem; }
+  </style>
+</head>
+<body>
+  <h1>RER DSP — Documentação / Documentation</h1>
+  <p>Escolha o idioma / Choose a language:</p>
+  <ul>
+    <li><a id="link-pt" href="#">🇧🇷 Português (Brasil)</a></li>
+    <li><a id="link-en" href="#">🇺🇸 English</a></li>
+  </ul>
+  <script>
+    (function () {
+      function docsBasePath() {
+        var match = location.pathname.match(/^(\/rer-dsp-docs)(?=\/|$)/);
+        return match ? match[1] : "";
+      }
+
+      var base = docsBasePath();
+      var ptUrl = base + "/pt-br/";
+      var enUrl = base + "/en/";
+
+      document.getElementById("link-pt").href = ptUrl;
+      document.getElementById("link-en").href = enUrl;
+
+      var langs = [];
+      if (navigator.languages && navigator.languages.length) {
+        langs = Array.prototype.slice.call(navigator.languages);
+      }
+      if (navigator.language) {
+        langs.push(navigator.language);
+      }
+
+      var target = enUrl;
+      for (var i = 0; i < langs.length; i++) {
+        var tag = String(langs[i]).toLowerCase();
+        var primary = tag.match(/^([a-z]{2})/);
+        if (!primary) {
+          continue;
+        }
+        if (primary[1] === "pt") {
+          target = ptUrl;
+          break;
+        }
+        if (primary[1] === "en") {
+          target = enUrl;
+          break;
+        }
+      }
+
+      location.replace(target);
+    })();
+  </script>
+</body>
+</html>
