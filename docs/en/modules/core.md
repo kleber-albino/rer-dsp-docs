@@ -53,13 +53,12 @@ flowchart TD
 
 Interactive wizard that writes `config/adopter/adopter-config.yaml` and, on reapply, generates operational files (list below). Entry: `./config.sh` (no arguments).
 
-- `config/installation/installation-config.json` — hierarchy, screens, KPIs, `map.initialView`, AOI detail panel.
-- `config/map/mapLayersConfig.json` — WMS groups and layers, SRIDs.
-- `config/downloads/downloadThemesConfig.json` — Downloads screen themes.
-- `config/about/about-config.json` — About page index (when enabled); Markdown in `config/about/`.
-- `config/Job-Data-Migration/application/application.yaml` — datasources and ETL mapping.
-- `config/Job-Geo-File-Generation/application/application.yaml` — object storage (SeaweedFS); **no** cron in YAML.
-- `.env` — `DSP_SOURCE_*`, `DSP_OBJECT_STORAGE_*`, and other keys the wizard fills.
+- `dsp-backend/config/installation/installation-config.json` — hierarchy, screens, KPIs, `map.initialView`, AOI detail panel.
+- `dsp-backend/config/map/mapLayersConfig.json` — WMS groups and layers, SRIDs (copy in `dsp-job-data-migration/config/map/`).
+- `dsp-backend/config/downloads/downloadThemesConfig.json` — Downloads screen themes (copy in `dsp-job-geo-file-generation/config/downloads/`).
+- `dsp-backend/config/about/about-config.json` — About page index (when enabled); Markdown in `dsp-backend/config/about/`.
+- `dsp-job-data-migration/config/application/application.yaml` — datasources and ETL mapping.
+- `.env` — `DSP_SOURCE_*`, `DSP_OBJECT_STORAGE_*` (backend and geo-file job), and other keys the wizard fills.
 
 These operational artifacts **must not be edited manually** — they are derived and **regenerated** on every reapply of `./config.sh`. Always adjust `config/adopter/adopter-config.yaml` (wizard or editor) and then reapply.
 
@@ -83,10 +82,10 @@ The wizard does **not** ask for batch job schedule nor write `DSP_MIGRATION_CRON
 | 3 | Start over from template (`adopter-config.yaml.example`), discarding the current file |
 
 !!! tip "Two ways to configure"
-    You can follow the **step-by-step wizard** (recommended — each question explains the field and where the value is used, showing current/default in brackets and keeping it if you press Enter), **or edit directly** `config/adopter/adopter-config.yaml` in a text editor, using `config/adopter/adopter-config.yaml.example` as a structure reference. After editing the adopter, run `./config.sh` and choose **1 — Reapply** to regenerate operational JSON/YAML. Do **not** edit `installation-config.json`, `mapLayersConfig.json`, `downloadThemesConfig.json`, or job `application.yaml` files by hand.
+    You can follow the **step-by-step wizard** (recommended — each question explains the field and where the value is used, showing current/default in brackets and keeping it if you press Enter), **or edit directly** `config/adopter/adopter-config.yaml` in a text editor, using `config/adopter/adopter-config.yaml.example` as a structure reference. After editing the adopter, run `./config.sh` and choose **1 — Reapply** to regenerate operational JSON/YAML. Do **not** edit `installation-config.json`, `mapLayersConfig.json`, `downloadThemesConfig.json`, or the migration job `application.yaml` by hand.
 
 !!! warning "Rebuild after changing configuration"
-    Operational files generated in `config/` are **copied into Docker images at build** (`select-runtime-config.sh` + `dsp_config` context). After `./config.sh`, run `./setup.sh` or `./start.sh` to rebuild containers that consume that configuration (backend, GeoServers, migration job).
+    Operational files are written to **backend** and **job** repositories and **copied into Docker images at build** (`select-runtime-config.sh` in each repo; GeoServers use `backend_config` in Compose). After `./config.sh`, run `./setup.sh` or `./start.sh` to rebuild affected containers. The geo-file job uses `application.properties` in the JAR; object storage comes from `.env` via Compose (recreate is often enough).
 
 The wizard is split into **6 stages**. In each, the operator answers guided questions (field and impact explained) until adopter configuration and customization are covered:
 
@@ -189,7 +188,7 @@ Migration timezone: `DSP_MIGRATION_TZ` in `.env` (see `.env.example`). Pre-gener
 | Run now + Continuous | `continuous` | Active (supercronic) |
 | Schedule + Continuous | `continuous` + `DSP_MIGRATION_SCHEDULED_AT` | Active (wait, then supercronic) |
 
-If `config/Job-Data-Migration/application/application.yaml` is still identical to the template (`.example`), `setup.sh` stops with an error — run `./config.sh` or edit the file first.
+If `dsp-job-data-migration/config/application/application.yaml` is still identical to the template (`.example`), `setup.sh` stops with an error — run `./config.sh` or edit the file first.
 
 #### Databases and layer publication
 
@@ -348,18 +347,18 @@ flowchart LR
   configSh --> downloadJson["downloadThemesConfig.json"]
   configSh --> aboutJson["about-config.json"]
   configSh --> appYaml["Job-Data-Migration application.yaml"]
-  configSh --> geoYaml["Job-Geo-File-Generation application.yaml"]
   configSh --> dotenvStorage[".env DSP_OBJECT_STORAGE_* / DSP_SOURCE_*"]
-  installJson --> build["docker compose build<br/>dsp_config context"]
+  installJson --> build["docker compose build<br/>per-repo config"]
   mapJson --> build
   downloadJson --> build
   aboutJson --> build
   appYaml --> build
-  geoYaml --> build
+  downloadJson --> geoJobImg["dsp-job-geo-file-generation /config"]
   dotenvStorage --> setupSh["./setup.sh writes crons to .env"]
   build --> backendImg["dsp-backend /config"]
   build --> geoserverImg["GeoServers /config"]
   build --> jobImg["dsp-job-migration /config"]
+  dotenvStorage --> geoJobEnv["dsp-job-geo-file-generation env"]
 ```
 
 - **`./config.sh`** — adopter entry point; wizard, reapply, or recreate `adopter-config.yaml` and generate operational JSON/YAML listed above.
@@ -368,9 +367,9 @@ flowchart LR
 - **`mapLayersConfig.json`** — WMS groups and layers; published on GeoServers by `populate_geoserver.sh`.
 - **`downloadThemesConfig.json`** — download themes (AOI + `etl.layers[]`); `formats` is `csv` and `gpkg`; `wfsBaseUrl` at `${DSP_PUBLIC_BASE_URL}/geoserver-download/dsp/wfs`.
 - **`about-config.json`** — About index (`enabled`, `bannerTitle`, `tabs` with ids `tab-1`, `tab-2`, …).
-- **`application.yaml`** — ETL plan. Copied to job image at build (with entrypoint and GeoServer publish scripts).
-- **`config/Job-Geo-File-Generation/application/application.yaml`** — S3 for pre-generation job (no cron; schedule only in `.env` via `./setup.sh`).
-- **Images `dsp-backend`, GeoServers, `dsp-job-migration`, databases, and `dsp-gateway`** — configs and init SQL copied at build via `dsp_config`; volumes hold data only (and gateway cache).
+- **`application.yaml` (migration)** — ETL plan. Copied to the migration job image at build (with entrypoint and GeoServer publish scripts).
+- **`dsp-job-geo-file-generation`** — Spring Boot via `application.properties` in the JAR; Compose injects `SPRING_DATASOURCE_*`, `DSP_OBJECT_STORAGE_*`, and `DSP_DOWNLOAD_THEMES_FILE`. Only `downloadThemesConfig.json` is baked to `/config`. Cron in `.env` via `./setup.sh`. The **migration** job still uses external YAML + `SPRING_CONFIG_LOCATION`.
+- **Images `dsp-backend`, GeoServers, `dsp-job-migration`, databases, and `dsp-gateway`** — app configs copied at build from each component repo; GeoServers read map layers from `backend_config`; volumes hold data only (and gateway cache).
 - **Image `dsp-object-storage`** — SeaweedFS (`weed mini`) with credentials in `s3.json` in the image. Volume `dsp_object_storage_data` holds objects; internal volume size and count are computed by `weed mini` from free space on the Docker volume.
 
 See also: [Data flow](../architecture/data-flow.md) (runtime) and [dsp-backend](backend.md) (download environment variables).
