@@ -28,8 +28,8 @@ flowchart TD
 
 ## Responsabilidades
 
-- Configuração de exemplo do adotante.
-- Conteúdo de exemplo da página About (`config/about/`).
+- Configuração de exemplo do adotante (`config/adopter/`).
+- Infraestrutura de stack (bancos, GeoServers, gateway, object storage).
 - SQL de inicialização dos bancos.
 - GeoServer Exhibition (mapa) e GeoServer Download (WFS de exportação).
 - Gateway nginx (`dsp-gateway`) como porta de entrada única da stack.
@@ -54,7 +54,7 @@ flowchart TD
 Wizard interativo que grava `config/adopter/adopter-config.yaml` e, na reaplicação, gera os arquivos operacionais (lista abaixo). Entrada: `./config.sh` (sem argumentos).
 
 - `dsp-backend/config/installation/installation-config.json` — hierarquia, telas, KPIs, `map.initialView`, painel de detalhe da AOI.
-- `dsp-backend/config/map/mapLayersConfig.json` — grupos e camadas WMS, SRIDs (cópia em `dsp-job-data-migration/config/map/`).
+- `dsp-backend/config/map/mapLayersConfig.json` — grupos e camadas WMS, SRIDs (cópias em `dsp-job-data-migration/config/map/`, `config/GeoserverExhibition/map/` e `config/GeoserverDownload/map/` no dsp-core).
 - `dsp-backend/config/downloads/downloadThemesConfig.json` — temas da tela Downloads (cópia em `dsp-job-geo-file-generation/config/downloads/`).
 - `dsp-backend/config/about/about-config.json` — índice da página About (quando habilitada); Markdown em `dsp-backend/config/about/`.
 - `dsp-job-data-migration/config/application/application.yaml` — datasources e mapeamento ETL.
@@ -85,7 +85,7 @@ O wizard **não** pergunta horário de job batch nem grava `DSP_MIGRATION_CRON` 
     Você pode seguir o **wizard passo a passo** (recomendado — cada pergunta explica o campo e onde o valor é usado, mostrando o valor atual/padrão entre colchetes e mantendo-o se você só apertar Enter), **ou editar diretamente** o arquivo `config/adopter/adopter-config.yaml` num editor de texto, usando `config/adopter/adopter-config.yaml.example` como referência de estrutura. Depois de editar o adotante, rode `./config.sh` e escolha **1 — Reaplicar** para regenerar os JSON/YAML operacionais. **Não** edite `installation-config.json`, `mapLayersConfig.json`, `downloadThemesConfig.json` nem o `application.yaml` do job de migração à mão.
 
 !!! warning "Rebuild após alterar a configuração"
-    Os arquivos operacionais são gravados nos repositórios **backend** e **jobs** e **copiados para dentro das imagens Docker no build** (`select-runtime-config.sh` em cada repo; GeoServers usam `backend_config` no Compose). Depois de `./config.sh`, rode `./setup.sh` ou `./start.sh` para rebuildar os containers afetados. O job geo-file usa `application.properties` no JAR; object storage vem do `.env` via Compose (recreate costuma bastar).
+    Os arquivos operacionais são gravados nos repositórios **backend**, **jobs** e nos diretórios `Geoserver*/map/` do **dsp-core**, e **copiados para dentro das imagens Docker no build** (`select-runtime-config.sh` no contexto de cada imagem). Não há mais contexto Compose centralizado (`dsp_config`). Depois de `./config.sh`, rode `./setup.sh` ou `./start.sh` para rebuildar os containers afetados. O job geo-file usa `application.properties` no JAR; object storage vem do `.env` via Compose (recreate costuma bastar).
 
 O wizard é dividido em **6 etapas**. Em cada uma, o operador responde perguntas guiadas (com explicação do campo e do impacto) até cobrir a configuração necessária e a personalização do adotante:
 
@@ -96,7 +96,7 @@ O wizard é dividido em **6 etapas**. Em cada uma, o operador responde perguntas
 | **3 — Aplicação** | Label do KPI de área de interesse (`area_of_interest`), formatos de data e data-hora | Dashboard, listagens e detalhe |
 | **4 — Interface** | Labels da hierarquia, títulos das telas, campos do painel de detalhe da AOI, `map.initialView` (`territorial_bbox` / `manual` / `planet`), grupos e estilos das camadas fixas de mapa | Frontend, seletor de camadas e estilos publicados no GeoServer |
 | **5 — KPIs** | Cores dos cards, unidade de área da AOI, quantidade e mapeamento dos KPIs de tema (0–4) | Bloco `kpis` no `application.yaml`, cards `THEME_*` e job `kpi-job` |
-| **6 — About** (opcional) | Habilitar página About, título do banner, abas (label + arquivo `.md` / `.markdown`; o wizard pode copiar de qualquer pasta para `config/about/`) | `about-config.json` + conteúdo em `config/about/` |
+| **6 — About** (opcional) | Habilitar página About, título do banner, abas (label + arquivo `.md` / `.markdown`; o wizard pode copiar de qualquer pasta para `dsp-backend/config/about/`) | `about-config.json` + conteúdo em `dsp-backend/config/about/` |
 
 No terminal o wizard mostra **5 estágios** numerados (1–5) mais o bloco **About** opcional ao final — na documentação, o About conta como **6ª etapa**.
 
@@ -133,9 +133,9 @@ Na **etapa 6/6**, o adotante pode recusar a página About; nesse caso ela perman
 !!! tip "Contrato protegido"
     O arquivo gerado contém apenas os campos editáveis pelo adotante. Chaves de contrato internas do DSP (IDs de camada WMS, nomes de tabela alvo, códigos de KPI) permanecem fixas nos templates do core e não são expostas no wizard.
 
-#### Página About (`config/about/`)
+#### Página About (`dsp-backend/config/about/`)
 
-A pasta `config/about/` traz o conteúdo de exemplo da página About do frontend: `about-config.json.example` (índice de exemplo) e os Markdown de demonstração (`*.quickstart.md.example`, copiados no modo Demonstração). O fluxo normal do wizard é informar um Markdown de qualquer pasta do computador, que é copiado para `config/about/`.
+A pasta `dsp-backend/config/about/` traz o conteúdo de exemplo da página About do frontend: `about-config.json.example` (índice de exemplo) e os Markdown de demonstração (`*.quickstart.md.example`, copiados no modo Demonstração). O fluxo normal do wizard é informar um Markdown de qualquer pasta do computador, que é copiado para `dsp-backend/config/about/`.
 
 O YAML do adotante (`config/adopter/adopter-config.yaml` / `.yaml.example`) tem uma seção `about` com os campos:
 
@@ -143,9 +143,9 @@ O YAML do adotante (`config/adopter/adopter-config.yaml` / `.yaml.example`) tem 
 |-------|--------|
 | `enabled` | Habilita/desabilita a página About customizada |
 | `banner_title` | Título exibido no banner da página |
-| `tabs` | Lista de `{label, file}` — no wizard, `file` pode ser de qualquer pasta (copiado para `config/about/`); na edição manual do YAML, só o nome do arquivo já presente em `config/about/` (caminhos absolutos ou fora da pasta são recusados no apply) |
+| `tabs` | Lista de `{label, file}` — no wizard, `file` pode ser de qualquer pasta (copiado para `dsp-backend/config/about/`); na edição manual do YAML, só o nome do arquivo já presente em `dsp-backend/config/about/` (caminhos absolutos ou fora da pasta são recusados no apply) |
 
-`apply_config()` gera `config/about/about-config.json` com ids automáticos (`tab-1`, `tab-2`, …) a partir da ordem das abas. O backend lê esses arquivos em `/config/about/` **dentro da imagem** (copiados no build). Variáveis: `DSP_ABOUT_CONFIG_FILE` e `DSP_ABOUT_CONTENT_DIR` (`.env.example`).
+`apply_config()` gera `dsp-backend/config/about/about-config.json` com ids automáticos (`tab-1`, `tab-2`, …) a partir da ordem das abas. O backend lê esses arquivos em `/config/about/` **dentro da imagem** (copiados no build). Variáveis: `DSP_ABOUT_CONFIG_FILE` e `DSP_ABOUT_CONTENT_DIR` (`.env.example`).
 
 ### `./setup.sh`
 
@@ -345,10 +345,12 @@ flowchart LR
   configSh --> mapJson["mapLayersConfig.json"]
   configSh --> downloadJson["downloadThemesConfig.json"]
   configSh --> aboutJson["about-config.json"]
-  configSh --> appYaml["Job-Data-Migration application.yaml"]
+  configSh --> appYaml["dsp-job-data-migration application.yaml"]
   configSh --> dotenvStorage[".env DSP_OBJECT_STORAGE_* / DSP_SOURCE_*"]
+  mapJson --> gsMap["GeoserverExhibition/Download map"]
   installJson --> build["docker compose build<br/>config por repo"]
   mapJson --> build
+  gsMap --> build
   downloadJson --> build
   aboutJson --> build
   appYaml --> build
@@ -368,7 +370,7 @@ flowchart LR
 - **`about-config.json`** — índice About (`enabled`, `bannerTitle`, `tabs` com ids `tab-1`, `tab-2`, …).
 - **`application.yaml` (migração)** — plano ETL. Copiado para a imagem do job de migração no build (com entrypoint e scripts de publicação GeoServer).
 - **`dsp-job-geo-file-generation`** — Spring Boot via `application.properties` no JAR; Compose injeta `SPRING_DATASOURCE_*`, `DSP_OBJECT_STORAGE_*` e `DSP_DOWNLOAD_THEMES_FILE`. Só `downloadThemesConfig.json` vai para `/config` na imagem. Cron no `.env` via `./setup.sh`. O job de **migração** ainda usa `SPRING_CONFIG_LOCATION` + YAML externo.
-- **Imagens `dsp-backend`, GeoServers, `dsp-job-migration`, bancos e `dsp-gateway`** — configs de app copiados no build de cada repositório; GeoServers leem mapa via `backend_config`; volumes guardam só dados (e cache do gateway).
+- **Imagens `dsp-backend`, GeoServers, `dsp-job-migration`, bancos e `dsp-gateway`** — configs de app copiados no build de cada repositório (GeoServers usam `config/Geoserver*/map/` no dsp-core); o job de migração inclui `populate_geoserver_*.sh` no próprio repo; volumes guardam só dados (e cache do gateway).
 - **Imagem `dsp-object-storage`** — SeaweedFS (`weed mini`) com credenciais em `s3.json` na imagem. Volume `dsp_object_storage_data` guarda os objetos; tamanho e quantidade de volumes internos são calculados pelo `weed mini` conforme o espaço livre no volume Docker.
 
 Veja também: [Fluxo de dados](../architecture/data-flow.md) (runtime) e [dsp-backend](backend.md) (variáveis de ambiente de downloads).
