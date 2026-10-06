@@ -179,7 +179,9 @@ Em seguida (ainda no step 3 do setup, opção 2), pergunta o **cron de pré-gera
 
 Valores de migração e pré-geração são gravados no `.env` no **fim** do setup (step 9), junto com `DSP_MIGRATION_*`. Reexecutar `./setup.sh` (adotante real) repete as perguntas, usando o `.env` como padrão.
 
-Fuso da migração: `DSP_MIGRATION_TZ` no `.env` (veja `.env.example`). Pré-geração herda `DSP_MIGRATION_TZ` quando `DSP_GEO_FILE_GENERATION_TZ` está vazio.
+Fuso dos jobs batch: o `./setup.sh` pergunta **dia, hora e cron em UTC** (independente do fuso do servidor onde você roda o script). O `.env` grava `DSP_MIGRATION_TZ=UTC` e `DSP_GEO_FILE_GENERATION_TZ=UTC` (relógio do supercronic e de `DSP_MIGRATION_SCHEDULED_AT`). Isso **não** altera `source-timezone` no `application.yaml` da migração (semântica JDBC na origem).
+
+Instalações antigas com `America/Sao_Paulo`: os mesmos números de cron passam a significar **UTC** — ajuste os horários ou rode `./setup.sh` (adotante real) de novo para regravar o `.env`.
 
 | Combinação | `DSP_MIGRATION_EXECUTION_MODE` | Container do job após o setup |
 |------------|-------------------------------|------------------------------|
@@ -314,10 +316,10 @@ O `./config.sh` grava JDBC, SRID e `DSP_OBJECT_STORAGE_*` (a partir de `environm
 | `DSP_MIGRATION_EXECUTION_MODE` | `once`: carga no setup e desliga o job. `continuous`: supercronic em `DSP_MIGRATION_CRON`. `scheduled-once`: uma carga em `DSP_MIGRATION_SCHEDULED_AT` |
 | `DSP_MIGRATION_CRON` | Cron Unix de 5 campos gerado pelo setup (ex.: `0 */6 * * *` ou `*/2 * * * *`). Só `continuous` |
 | `DSP_MIGRATION_SCHEDULED_AT` | Data/hora da primeira carga quando o setup escolhe **Schedule for later** |
-| `DSP_MIGRATION_TZ` | Fuso IANA do relógio (`.env.example`) |
+| `DSP_MIGRATION_TZ` | Fuso IANA do relógio de cron e `DSP_MIGRATION_SCHEDULED_AT` (padrão `UTC` no `.env.example`; não é o `source-timezone` JDBC) |
 | `DSP_GEO_FILE_GENERATION_EXECUTION_MODE` | `continuous` (padrão): supercronic em `DSP_GEO_FILE_GENERATION_CRON`. `once`: uma execução via `compose run` |
 | `DSP_GEO_FILE_GENERATION_CRON` | Cron Unix de 5 campos para o job geo-file (ex.: `0 2 * * *`). Definido no `./setup.sh` (adotante real), **não** no `./config.sh` |
-| `DSP_GEO_FILE_GENERATION_TZ` | Fuso da pré-geração; vazio herda `DSP_MIGRATION_TZ` |
+| `DSP_GEO_FILE_GENERATION_TZ` | Fuso IANA do supercronic do geo-file (padrão `UTC`; variável própria no `.env.example`) |
 | Credenciais dos 2 bancos do core | Usuário/senha de dsp-db e dsp-geoserver-db |
 | `DSP_GEOSERVER_WFS_BASE_URL` | URL WFS do GeoServer Download na rede Docker (backend → download) |
 | `DSP_PUBLIC_BASE_URL` | URL pública da stack (`http://localhost:8026`). Alimenta URLs WMS/WFS do `./config.sh` e `PROXY_BASE_URL` dos GeoServers |
